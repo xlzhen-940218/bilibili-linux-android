@@ -1,5 +1,7 @@
 **简体中文 | [繁體中文](README_zh-tw.MD) | [English](README_en.MD)**
 
+> Android 平板版 APK 下载：https://github.com/xlzhen-940218/bilibili-linux-android/releases
+
 <div align="center">
 
   <img src="./res/icons/bilibili.svg" height="100px" width="100px"/>

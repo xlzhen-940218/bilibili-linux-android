@@ -3,6 +3,16 @@
 在 Android 平板上运行**官方桌面客户端的 render 页面**（`bilipc.bilibili.com` 的 Vue 应用），
 而不是 `www.bilibili.com` 网页版。
 
+## 下载
+
+APK 发布在 GitHub Releases：
+
+**https://github.com/xlzhen-940218/bilibili-linux-android/releases**
+
+- 支持 Android 8.0+（minSdk 26），11 寸及以上平板横屏体验最佳；
+- 首次启动请允许通知权限（Android 13+），用于播放页媒体通知；
+- 安装包内含官方客户端 render 资源，版权归哔哩哔哩，仅供个人自用。
+
 ## 资源来源
 
 图一那套界面不在这个仓库里，也不在网页版里，而在官方客户端：
