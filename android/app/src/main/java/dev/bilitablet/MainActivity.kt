@@ -65,6 +65,7 @@ class MainActivity : AppCompatActivity() {
 
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+    private var immersive = true
 
     private val loginLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -534,6 +535,24 @@ class MainActivity : AppCompatActivity() {
                         .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                 )
             }
+        }
+
+        @JavascriptInterface
+        fun toggleImmersive() {
+            runOnUiThread {
+                immersive = !immersive
+                if (immersive) {
+                    hideSystemBars()
+                } else {
+                    WindowInsetsControllerCompat(window, window.decorView)
+                        .show(WindowInsetsCompat.Type.systemBars())
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun closeApp() {
+            runOnUiThread { finish() }
         }
 
         @JavascriptInterface

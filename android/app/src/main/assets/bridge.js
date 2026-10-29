@@ -15,6 +15,17 @@
     }
     window.__biliTabletBridge = true;
 
+    // 记录用户是否真的点击过页面：window/close 在播放页初始化时也会被调用，
+    // 不能无条件跳回首页，否则 player.html 一加载就被带回去。
+    window.__biliUserInteracted = false;
+    try {
+        document.addEventListener('click', function () {
+            window.__biliUserInteracted = true;
+        }, true);
+    } catch (e) {
+        /* ignore */
+    }
+
     // render 的 WBI 签名依赖 UNIFY_HTTP_WBI_CONFIG 和 bili_ticket。
     // 原生登录页不会走官方 auth/setCookies，所以这里从 localStorage 的 wbi_img_urls
     // 还原 keys，并放一个未过期的 ticket 占位，避免 isWbi 请求卡在 forticket 获取上。
@@ -193,6 +204,38 @@
 
     function callNative(action) {
         console.log('[bridge-async]', action);
+        if (action === 'window/minimize' || action === 'window/miniPlayerWindow') {
+            // 桌面客户端的最小化/小窗，在 Android 上落到系统 PiP。
+            if (window.AndroidBridge && typeof window.AndroidBridge.enterPip === 'function') {
+                window.AndroidBridge.enterPip();
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'window/unminiPlayerWindow' || action === 'window/playerWindowRecover') {
+            if (window.AndroidBridge && typeof window.AndroidBridge.exitPip === 'function') {
+                window.AndroidBridge.exitPip();
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'window/toggleMaximize') {
+            // WebView 没有独立窗口，这里用沉浸式切换作为「最大化/还原」的反馈。
+            if (window.AndroidBridge && typeof window.AndroidBridge.toggleImmersive === 'function') {
+                window.AndroidBridge.toggleImmersive();
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'window/close' || action === 'window/forceClose') {
+            // 初始化阶段的 close 调用不处理，只有用户点击关闭按钮后才回首页/退出。
+            if (!window.__biliUserInteracted) {
+                return Promise.resolve({ code: 0 });
+            }
+            if (location.pathname.indexOf('player.html') >= 0) {
+                location.href = '/index.html#/page/home/recommends';
+            } else if (window.AndroidBridge && typeof window.AndroidBridge.closeApp === 'function') {
+                window.AndroidBridge.closeApp();
+            }
+            return Promise.resolve({ code: 0 });
+        }
         if (action === 'window/pinPlayerWindow') {
             // 播放页的迷你播放器按钮：转到 Android 系统画中画。
             if (window.AndroidBridge && typeof window.AndroidBridge.enterPip === 'function') {
