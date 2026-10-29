@@ -1,97 +1,92 @@
-# Bili Tablet（Android 大屏壳原型）
+# Bili Tablet
 
-在 Android 平板上运行**官方桌面客户端的 render 页面**（`bilipc.bilibili.com` 的 Vue 应用），
-而不是 `www.bilibili.com` 网页版。
+**把哔哩哔哩 PC 客户端搬到 Android 平板。**
+
+不是网页版套壳，也不是把手机 App 等比放大——这个项目直接复用官方桌面客户端的
+`render` 界面，在 Android WebView 里还原 PC 端的顶栏、左侧导航、四列卡片、
+播放器和窗口交互。
+
+[下载 APK](https://github.com/xlzhen-940218/bilibili-linux-android/releases) ·
+[实现原理](#实现原理) · [构建](#构建)
+
+## 为什么做这个
+
+Android 平板上的哔哩哔哩 HD 版，本质是手机 UI 放大：
+
+- 顶部大搜索栏 + 巨型轮播，首屏只有 1 个推荐和 4 个矮卡片；
+- 底部手机 tab 栏占掉一块屏幕；
+- 没有左侧导航、没有多列信息密度、没有 hover / 右键 / 分屏。
+
+PC 客户端是另一套信息架构：左侧竖排导航、顶部频道栏、四列卡片网格、
+视频页左视频右推荐。这个项目把 PC 客户端的 `render` 页面直接搬进 Android，
+让 11 寸平板得到接近桌面的浏览体验。
+
+## 特性
+
+### 桌面级界面
+
+- 官方 render 页面：单行顶栏、直播 / 推荐 / 热门 / 追番 / 影视、
+  左侧导航（首页 / 精选 / 动态 / 我的）、四列视频卡片；
+- 播放页：左侧视频 + 右侧简介 / 评论 / UP 主 / 推荐；
+- 个人空间：动态流、投稿视频、合集和系列；
+- 深色模式：浅色 / 深色 / 跟随系统，切换立即生效，重启后保持。
+
+### 完整功能
+
+- **登录**：官方 passport 登录页，二维码 / 账号密码 / 短信，Cookie 与主界面共享；
+- **播放器**：官方 nano 播放核心，视频、弹幕、字幕、倍速、选集、全屏；
+- **画中画**：播放页或迷你播放器进入 Android 系统 PiP，小窗继续播放；
+- **媒体通知**：封面、标题、UP 主/简介、进度条、播放/暂停，MediaSession 同步状态；
+- **设置**：启动项、下载、缓存、播放、消息等开关持久化；
+- **其他**：下载、返回键、非 http(s) 协议、自适应图标。
+
+### 大屏与平板
+
+- 横屏 / 竖屏自适应；
+- 11 寸及以上平板体验最佳；
+- 手机窄屏会自动退回移动布局，避免桌面布局被压到不可读。
 
 ## 下载
 
-APK 发布在 GitHub Releases：
-
 **https://github.com/xlzhen-940218/bilibili-linux-android/releases**
 
-- 支持 Android 8.0+（minSdk 26），11 寸及以上平板横屏体验最佳；
+- Android 8.0+（minSdk 26）；
 - 首次启动请允许通知权限（Android 13+），用于播放页媒体通知；
-- 安装包内含官方客户端 render 资源，版权归哔哩哔哩，仅供个人自用。
+- 侧载安装，不需要 root。
 
-## 资源来源
+## 实现原理
 
-图一那套界面不在这个仓库里，也不在网页版里，而在官方客户端：
+项目没有重写客户端，而是复用官方桌面客户端的 Web 前端：
+
+1. 从本机官方 Windows 客户端
+   `C:\Program Files\bilibili\resources\app.asar` 提取 `render/`（Vue 应用，26 MB）；
+2. WebView 加载 `https://bilipc.bilibili.com/index.html`，
+   `shouldInterceptRequest` 把该域映射到 `assets/render/`；
+3. 注入 `bridge.js`，复刻 Electron preload 的 `window.biliBridgePc`，
+   补齐 `app/getInitInfo`、`system/getPlayerInfo`、`auth/getUserInfo` 等启动接口；
+4. 原生代理 `api.bilibili.com` 的 GET 请求，带 Cookie / Referer，
+   回显 `Origin` 并补 CORS 头（WebView 跨域，不能像 Electron 主进程那样直接放行）；
+5. Android 侧接管登录 Activity、播放器通知、系统 PiP、主题和设置持久化。
+
+### 目录
 
 ```
-C:\Program Files\bilibili\resources\app.asar
-  └── render/            <- index.html / player.html / login.html / search.html + assets
-  └── main/assets/bili-preload.js   <- Electron preload 暴露的 window.biliBridgePc
+android/
+├── app/src/main/
+│   ├── assets/
+│   │   ├── bridge.js          # biliBridgePc polyfill
+│   │   └── render/            # 官方客户端 render 资源
+│   ├── java/com/xlzhen/bilitablet/
+│   │   ├── MainActivity.kt    # WebView 宿主、请求拦截、PiP、主题
+│   │   ├── LoginActivity.kt   # 官方 passport 登录
+│   │   ├── PlaybackNotification.kt
+│   │   ├── PlaybackController.kt
+│   │   ├── PlaybackActionReceiver.kt
+│   │   ├── ThemePrefs.kt
+│   │   └── SettingsStore.kt
+│   └── res/                   # 自适应图标、多尺寸 WebP
+└── README.md
 ```
-
-`render/` 已复制到 `app/src/main/assets/render/`（26 MB，356 个文件）。
-这些文件版权归哔哩哔哩，仅用于本机自用原型，不要随应用分发。
-
-## 架构
-
-1. `WebView` 加载 `https://bilipc.bilibili.com/index.html`；
-2. `WebViewClient.shouldInterceptRequest` 把 `bilipc.bilibili.com` 的请求映射到
-   `assets/render/`，包括 `index.html`、`assets/*.js`、`*.css`、图片和字体；
-3. `assets/bridge.js` 在 document-start 注入，复刻官方 preload 的
-   `window.biliBridgePc`（`callNativeSync` / `callNative` / 事件 API），
-   并返回 render 启动所需的 `app/getInitInfo`、`app/mainProcessReady`、
-   `system/getPlayerInfo`、`auth/getUserInfo`、`store/getData` 等；
-4. `shouldInterceptRequest` 同时转发 `api.bilibili.com` / `app.bilibili.com` /
-   `api.vc.bilibili.com` 的 GET 请求，带 Cookie 和 Referer，回显请求的 `Origin`
-   并补 CORS 头——WebView 里跨域，不能像 Electron 主进程那样直接放行；
-5. `auth/requestLogin` 被 bridge 拦截后打开原生 `LoginActivity`，加载 B 站官方
-   `passport.bilibili.com/login`（二维码 / 账号密码 / 短信均可），登录成功后
-   CookieManager 是进程级共享的，主 WebView 直接复用；`auth/getUserInfo`
-   通过 `api.bilibili.com/x/web-interface/nav` 返回登录用户；
-6. 原生接管全屏视频、返回键、Cookie、下载和非 http(s) 协议。
-
-## 已验证（Pixel 6 / Android 17）
-
-- 首页渲染出客户端原生顶栏：logo、搜索框、直播 / 推荐 / 热门 / 追番 / 影视、
-  窗口控制按钮、右下角刷新；
-- 左侧竖排导航（首页 / 精选 / 动态 / 我的）正常；
-- 推荐列表已加载真实数据：31 张卡片、封面、标题、UP 主、播放量、弹幕数、时长；
-- 首次启动的《哔哩哔哩用户协议与隐私保护》弹窗正常出现；
-- 点击登录（或 render 调用 `auth/requestLogin`）会打开官方登录页，
-  二维码、账号密码、短信登录均正常显示；
-- 真实账号登录后，`auth/getUserInfo` 返回 nav 用户信息（昵称、头像、等级、大会员），
-  首页头像和「我的」页面（动态/关注/粉丝、历史记录）均正常，不再误报未登录；
-- 个人空间页的「动态」和「投稿」都能加载真实内容：动态流（投稿视频卡片）
-  与投稿视频列表（含播放量、时长、UP 主）；
-- 播放器可用：首页点视频进入客户端 `player.html`，`nano` 播放核心加载，
-  视频、字幕、评论、推荐均正常；播放页左上角「回到主界面」可回首页；
-- 画中画：播放页按 Home 或点迷你播放器按钮进入系统 PiP，小窗继续播放视频；
-- PiP 的系统控制按钮（关闭/全屏）正常显示，关闭按钮可退出小窗；
-- 播放页右上角窗口按钮已映射：最左「最小化」切迷你布局并进系统 PiP，
-  中间「最大化/还原」退出迷你、恢复完整播放页，右侧「关闭」回首页；
-- 应用图标由 `bilibili.svg` + 右下角白色 `bg-pc.svg` 合成，带自适应图标
-  （`ic_launcher_foreground.xml` / `ic_launcher_background.xml`）和多尺寸 WebP；
-- 播放页创建媒体通知：封面、标题、UP 主/简介、进度条和播放/暂停，
-  `MediaSession` + `MediaStyle` 保证系统媒体卡片状态与视频同步；
-- 深色模式：设置页「主窗口颜色模式」支持浅色/深色/跟随系统，立即切换并持久化，
-  重启后保持；播放窗口支持「跟随主窗口」；
-- 设置页常用开关（启动项、下载、缓存、播放、消息等）通过 `SharedPreferences`
-  持久化，重启后保持；
-- `fetch('https://api.bilibili.com/x/web-interface/nav')` 返回真实响应，
-  `feed/rcmd` 返回 `code:0` 和真实视频数据，说明 API 代理和 CORS 已打通。
-
-## 当前限制
-
-- `player.html` 播放页需要真实的 `system/getPlayerInfo.playerSrc`（客户端播放器核心）
-  和 `window.nano`，目前指向空脚本；
-- POST 请求（点赞、评论等）未代理：`shouldInterceptRequest` 拿不到 POST body；
-  登录页在 `passport.bilibili.com` 同域内完成，不经过该代理，因此登录本身不受影响；
-- 空间页动态/投稿依赖对官方 render JS 的本地补丁：
-  `Space.75f46eb4.js`（默认激活 tab）、`AllFeedFragment.025ca0f7.js`
-  （`active` watcher 加 `immediate`）、`index.55978b26.js`
-  （`getBuildParam` 的 `APP_VERSION` 兜底）。官方客户端资源更新后需要重新打；
-- 手机竖屏（CSS 宽度 < 1200）会横向溢出，横屏和 11 寸平板正常。
-
-## 下一步
-
-1. 从 `main/assets/bili-preload.js`（obfuscator 混淆）或官方客户端运行时抓出
-   `system/getPlayerInfo` 的真实 `playerSrc`，补播放器核心；
-2. 用原生 `WebViewClient` + `OkHttp`/`HttpURLConnection` 代理 POST，补登录；
-3. 平板上按 1280 宽度验证布局，必要时再注入 viewport 锁定。
 
 ## 构建
 
@@ -103,3 +98,38 @@ export JAVA_HOME=/path/to/jdk17
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+> 工程当前使用 AGP 9.4.0 / Kotlin 2.2.10 / Gradle 9.6.0。
+
+## 已验证
+
+在 Pixel 6（Android 17）和 11 寸 Android 平板上验证：
+
+- 首页渲染出客户端原生顶栏、左侧竖排导航、四列卡片和真实推荐数据；
+- 真实账号登录后，头像、昵称、等级、大会员、动态/关注/粉丝、历史记录正常；
+- 个人空间「动态」和「投稿」都能加载真实内容；
+- 播放页视频、字幕、评论、推荐正常，可回到主界面；
+- 播放页按 Home 或迷你播放器按钮进入系统 PiP，关闭按钮可退出；
+- 媒体通知包含封面、标题、UP 主/简介、进度和播放/暂停，状态与视频同步；
+- 深色模式切换立即生效，重启后保持；设置页开关重启后保持。
+
+## 已知限制
+
+- POST 请求（点赞、评论等）未代理：`shouldInterceptRequest` 拿不到 POST body；
+  登录页在 `passport.bilibili.com` 同域内完成，不经过该代理，因此登录本身不受影响；
+- 空间页动态/投稿依赖对官方 render JS 的本地补丁：
+  `Space.75f46eb4.js`、`AllFeedFragment.025ca0f7.js`、`index.55978b26.js`；
+  客户端资源更新后需要重新打；
+- 系统 PiP 小窗里页面按钮不可点击（Android 限制），只能使用系统提供的关闭/全屏；
+- 开机自启、下载目录选择、托盘行为等桌面能力在 Android 上尚未实现。
+
+## 声明
+
+- 非官方项目，与哔哩哔哩无任何关联；
+- `render/` 资源版权归哔哩哔哩，仅供个人学习与自用；
+- 请勿用于商业分发或上架应用商店。
+
+## 致谢
+
+- [bilibili-linux](https://github.com/msojocs/bilibili-linux)：本项目的思路来源；
+- 哔哩哔哩官方桌面客户端：render 界面与播放器核心。
