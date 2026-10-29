@@ -49,7 +49,8 @@ C:\Program Files\bilibili\resources\app.asar
   与投稿视频列表（含播放量、时长、UP 主）；
 - 播放器可用：首页点视频进入客户端 `player.html`，`nano` 播放核心加载，
   视频、字幕、评论、推荐均正常；播放页左上角「回到主界面」可回首页；
-- 画中画：播放页按 Home 进入系统 PiP，小窗继续播放视频；
+- 画中画：播放页按 Home 或点迷你播放器按钮进入系统 PiP，小窗继续播放视频；
+- PiP 的系统控制按钮（关闭/全屏）正常显示，关闭按钮可退出小窗；
 - `fetch('https://api.bilibili.com/x/web-interface/nav')` 返回真实响应，
   `feed/rcmd` 返回 `code:0` 和真实视频数据，说明 API 代理和 CORS 已打通。
 

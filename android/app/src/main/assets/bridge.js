@@ -193,6 +193,19 @@
 
     function callNative(action) {
         console.log('[bridge-async]', action);
+        if (action === 'window/pinPlayerWindow') {
+            // 播放页的迷你播放器按钮：转到 Android 系统画中画。
+            if (window.AndroidBridge && typeof window.AndroidBridge.enterPip === 'function') {
+                window.AndroidBridge.enterPip();
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'window/unpinPlayerWindow') {
+            if (window.AndroidBridge && typeof window.AndroidBridge.exitPip === 'function') {
+                window.AndroidBridge.exitPip();
+            }
+            return Promise.resolve({ code: 0 });
+        }
         if (action === 'window/openMainWindow') {
             // 播放页左上角「回到主界面」：WebView 里直接回首页。
             location.href = '/index.html#/page/home/recommends';

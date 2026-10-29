@@ -494,8 +494,10 @@ class MainActivity : AppCompatActivity() {
         newConfig: Configuration
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        // 进出小窗都保持沉浸式，避免系统栏占用画面。
-        hideSystemBars()
+        // 进入 PiP 时不要隐藏系统栏，否则 SystemUI 的小窗控制按钮会被一起藏掉。
+        if (!isInPictureInPictureMode) {
+            hideSystemBars()
+        }
     }
 
     override fun onDestroy() {
@@ -515,6 +517,22 @@ class MainActivity : AppCompatActivity() {
         fun startLogin() {
             runOnUiThread {
                 loginLauncher.launch(Intent(this@MainActivity, LoginActivity::class.java))
+            }
+        }
+
+        @JavascriptInterface
+        fun enterPip() {
+            runOnUiThread { this@MainActivity.enterPip() }
+        }
+
+        @JavascriptInterface
+        fun exitPip() {
+            runOnUiThread {
+                // 把当前 Activity 调回前台，系统会自动退出 PiP。
+                startActivity(
+                    Intent(this@MainActivity, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                )
             }
         }
 
