@@ -3,8 +3,8 @@ tmp
 
 electron
 
-app
-test
+/app
+/test
 
 # Logs
 logs

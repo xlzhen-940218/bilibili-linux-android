@@ -1,0 +1,1 @@
+import{_ as e}from"./plugin-vue_export-helper.21dcd24c.js";import{o as a,c as t}from"./index.ef2cf61c.js";const _={},o={class:"favorite-kid-playlist-tag"};function r(s,c){return a(),t("span",o,"\u5B9D\u8D1D\u7247\u5355")}var l=e(_,[["render",r],["__scopeId","data-v-a3c6b014"]]);export{l as F};

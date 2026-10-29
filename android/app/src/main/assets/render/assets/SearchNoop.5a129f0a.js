@@ -1,0 +1,1 @@
+import{N as e,m as a,o as s,c as t,j as o,a as n}from"./index.ef2cf61c.js";const c={class:"i_page_wrapper"},_=n("div",{class:"i_page_content"},null,-1),r=[_],l=e({__name:"SearchNoop",setup(p){return a(()=>{o.emit("pageSpmIdChange","main.search-result.0.0")}),(i,d)=>(s(),t("div",c,r))}});export{l as default};
