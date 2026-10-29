@@ -1,4 +1,4 @@
-package dev.bilitablet
+package com.xlzhen.bilitablet
 
 import android.webkit.WebView
 import java.lang.ref.WeakReference

@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.bilitablet"
+    namespace = "com.xlzhen.bilitablet"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "dev.bilitablet"
+        applicationId = "com.xlzhen.bilitablet"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

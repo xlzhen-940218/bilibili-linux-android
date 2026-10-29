@@ -1,4 +1,4 @@
-package dev.bilitablet
+package com.xlzhen.bilitablet
 
 import android.annotation.SuppressLint
 import android.content.Intent

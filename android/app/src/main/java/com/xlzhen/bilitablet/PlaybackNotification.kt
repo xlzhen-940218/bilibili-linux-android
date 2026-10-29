@@ -1,4 +1,4 @@
-package dev.bilitablet
+package com.xlzhen.bilitablet
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
