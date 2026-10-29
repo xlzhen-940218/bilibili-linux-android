@@ -2,14 +2,18 @@ package dev.bilitablet
 
 import android.annotation.SuppressLint
 import android.app.DownloadManager
+import android.app.PictureInPictureParams
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.util.Rational
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -453,6 +457,45 @@ class MainActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(STATE_URL, webView.url ?: START_URL)
         super.onSaveInstanceState(outState)
+    }
+
+    /**
+     * 播放页按 Home 时进入系统画中画：
+     * - 全屏视频（onShowCustomView）时 PiP 显示视频层；
+     * - 非全屏的 player.html 也允许进入，至少小窗继续播放。
+     */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return
+        }
+        val isPlayerPage = webView.url?.contains("player.html") == true
+        if (customView != null || isPlayerPage) {
+            enterPip()
+        }
+    }
+
+    private fun enterPip() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return
+        }
+        try {
+            val params = PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9))
+                .build()
+            enterPictureInPictureMode(params)
+        } catch (_: Exception) {
+            // 设备不支持或当前状态不允许时忽略。
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        // 进出小窗都保持沉浸式，避免系统栏占用画面。
+        hideSystemBars()
     }
 
     override fun onDestroy() {

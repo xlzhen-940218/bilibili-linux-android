@@ -143,8 +143,9 @@
             case 'config/getIsQuitDialogPoped':
                 return true;
             case 'system/getPlayerInfo':
-                // 首页不依赖播放器核心；播放页后续换成真实 playerSrc。
-                return JSON.stringify({ playerSrc: '/empty.js', playerExpInfo: {} });
+                // 官方播放器核心在 render/assets/lib/core.js，player.html 会把它当 script 加载。
+                // 注意这里必须返回对象：player.html 用 qs() 直接解构，不会 JSON.parse。
+                return { playerSrc: '/assets/lib/core.js', playerExpInfo: {} };
             case 'system/getWxInstallInfo':
                 // 推荐接口 Oc() 会直接解构这个返回值，返回 null 会让请求发不出去。
                 return { isWeChatInstalled: false };
@@ -192,6 +193,25 @@
 
     function callNative(action) {
         console.log('[bridge-async]', action);
+        if (action === 'window/openMainWindow') {
+            // 播放页左上角「回到主界面」：WebView 里直接回首页。
+            location.href = '/index.html#/page/home/recommends';
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'window/openPlayerWindow') {
+            // 官方客户端会开独立播放窗口；WebView 里直接跳到同源的 player.html。
+            var info = arguments[1] || {};
+            var parts = [];
+            if (info.type) parts.push('type=' + encodeURIComponent(info.type));
+            if (info.bvid) parts.push('bvid=' + encodeURIComponent(info.bvid));
+            if (info.aid) parts.push('aid=' + encodeURIComponent(info.aid));
+            if (info.epid) parts.push('epid=' + encodeURIComponent(info.epid));
+            if (info.seasonId) parts.push('seasonId=' + encodeURIComponent(info.seasonId));
+            if (parts.length) {
+                location.href = '/player.html?' + parts.join('&');
+            }
+            return Promise.resolve({ code: 0 });
+        }
         if (action === 'auth/requestLogin') {
             // 官方 login.html 内嵌 Electron <webview>，Android 改为原生登录页。
             if (window.AndroidBridge && typeof window.AndroidBridge.startLogin === 'function') {

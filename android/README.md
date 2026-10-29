@@ -47,6 +47,9 @@ C:\Program Files\bilibili\resources\app.asar
   首页头像和「我的」页面（动态/关注/粉丝、历史记录）均正常，不再误报未登录；
 - 个人空间页的「动态」和「投稿」都能加载真实内容：动态流（投稿视频卡片）
   与投稿视频列表（含播放量、时长、UP 主）；
+- 播放器可用：首页点视频进入客户端 `player.html`，`nano` 播放核心加载，
+  视频、字幕、评论、推荐均正常；播放页左上角「回到主界面」可回首页；
+- 画中画：播放页按 Home 进入系统 PiP，小窗继续播放视频；
 - `fetch('https://api.bilibili.com/x/web-interface/nav')` 返回真实响应，
   `feed/rcmd` 返回 `code:0` 和真实视频数据，说明 API 代理和 CORS 已打通。
 
@@ -60,7 +63,6 @@ C:\Program Files\bilibili\resources\app.asar
   `Space.75f46eb4.js`（默认激活 tab）、`AllFeedFragment.025ca0f7.js`
   （`active` watcher 加 `immediate`）、`index.55978b26.js`
   （`getBuildParam` 的 `APP_VERSION` 兜底）。官方客户端资源更新后需要重新打；
-- `player.html` 播放页仍未打通。
 - 手机竖屏（CSS 宽度 < 1200）会横向溢出，横屏和 11 寸平板正常。
 
 ## 下一步
