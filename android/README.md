@@ -53,6 +53,10 @@ C:\Program Files\bilibili\resources\app.asar
 - PiP 的系统控制按钮（关闭/全屏）正常显示，关闭按钮可退出小窗；
 - 播放页右上角窗口按钮已映射：最左「最小化」切迷你布局并进系统 PiP，
   中间「最大化/还原」退出迷你、恢复完整播放页，右侧「关闭」回首页；
+- 应用图标由 `bilibili.svg` + 右下角白色 `bg-pc.svg` 合成，带自适应图标
+  （`ic_launcher_foreground.xml` / `ic_launcher_background.xml`）和多尺寸 WebP；
+- 播放页创建媒体通知：封面、标题、UP 主/简介、进度条和播放/暂停，
+  `MediaSession` + `MediaStyle` 保证系统媒体卡片状态与视频同步；
 - `fetch('https://api.bilibili.com/x/web-interface/nav')` 返回真实响应，
   `feed/rcmd` 返回 `code:0` 和真实视频数据，说明 API 代理和 CORS 已打通。
 

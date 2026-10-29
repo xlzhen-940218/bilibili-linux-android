@@ -6,6 +6,7 @@ import android.app.PictureInPictureParams
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -33,6 +34,8 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -94,10 +97,12 @@ class MainActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
+        PlaybackController.bind(webView)
         setContentView(root)
 
         configureWebView()
         enterImmersive()
+        requestNotificationPermission()
 
         webView.loadUrl(savedInstanceState?.getString(STATE_URL) ?: START_URL)
 
@@ -414,6 +419,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                200
+            )
+        }
+    }
+
     private fun startDownload(
         url: String,
         userAgent: String?,
@@ -553,6 +573,37 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun closeApp() {
             runOnUiThread { finish() }
+        }
+
+        @JavascriptInterface
+        fun updatePlayback(json: String) {
+            try {
+                val obj = JSONObject(json)
+                val title = obj.optString("title")
+                val cover = obj.optString("cover")
+                val desc = obj.optString("desc")
+                val playing = obj.optBoolean("playing")
+                val position = obj.optLong("position")
+                val duration = obj.optLong("duration")
+                runOnUiThread {
+                    PlaybackNotification.update(
+                        this@MainActivity,
+                        title,
+                        cover,
+                        desc,
+                        playing,
+                        position,
+                        duration
+                    )
+                }
+            } catch (_: Exception) {
+                /* 忽略格式错误 */
+            }
+        }
+
+        @JavascriptInterface
+        fun hidePlayback() {
+            runOnUiThread { PlaybackNotification.cancel(this@MainActivity) }
         }
 
         @JavascriptInterface

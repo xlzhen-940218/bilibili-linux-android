@@ -322,6 +322,94 @@
     }
     window.dataSync = function () {};
 
+    /**
+     * 播放页通知：标题、UP 主/简介、封面，以及播放/暂停按钮。
+     * 通知按钮通过 PlaybackActionReceiver -> PlaybackController 控制 WebView 里的 <video>。
+     */
+    function initPlayback() {
+        if (location.pathname.indexOf('player.html') < 0) {
+            return;
+        }
+
+        var bvid = (location.search.match(/[?&]bvid=([^&]+)/) || [])[1] || '';
+        var meta = { title: document.title || '', cover: '', desc: '' };
+
+        function push() {
+            var video = document.querySelector('video');
+            if (!video) {
+                return;
+            }
+            var info = {
+                title: meta.title || document.title || 'Bili Tablet',
+                cover: meta.cover || '',
+                desc: (meta.desc || '').slice(0, 160),
+                playing: !video.paused,
+                position: Math.round((video.currentTime || 0) * 1000),
+                duration: Math.round((video.duration || 0) * 1000)
+            };
+            if (window.AndroidBridge && typeof window.AndroidBridge.updatePlayback === 'function') {
+                window.AndroidBridge.updatePlayback(JSON.stringify(info));
+            }
+        }
+
+        function bind(video) {
+            if (video.__biliPlaybackBound) {
+                return;
+            }
+            video.__biliPlaybackBound = true;
+            ['play', 'pause', 'loadedmetadata', 'durationchange', 'ended'].forEach(function (ev) {
+                video.addEventListener(ev, function () {
+                    setTimeout(push, 150);
+                });
+            });
+            push();
+        }
+
+        function findVideo() {
+            var video = document.querySelector('video');
+            if (video) {
+                bind(video);
+                return true;
+            }
+            return false;
+        }
+
+        if (!findVideo()) {
+            var timer = setInterval(function () {
+                if (findVideo()) {
+                    clearInterval(timer);
+                }
+            }, 1000);
+        }
+
+        if (bvid) {
+            fetch(
+                'https://api.bilibili.com/x/web-interface/view?bvid=' + encodeURIComponent(bvid),
+                { credentials: 'include' }
+            )
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (!res || res.code !== 0 || !res.data) {
+                        return;
+                    }
+                    meta.title = res.data.title || meta.title;
+                    meta.cover = (res.data.pic || '').replace(/^http:/, 'https:');
+                    var owner = res.data.owner ? res.data.owner.name : '';
+                    var desc = res.data.desc || '';
+                    meta.desc = owner ? (owner + ' · ' + desc) : desc;
+                    push();
+                })
+                .catch(function () {});
+        }
+
+        window.addEventListener('beforeunload', function () {
+            if (window.AndroidBridge && typeof window.AndroidBridge.hidePlayback === 'function') {
+                window.AndroidBridge.hidePlayback();
+            }
+        });
+    }
+
     // 首次启动先拉一次用户信息；登录成功回到主页面后会重新执行。
     setTimeout(refreshUser, 200);
+    initPlayback();
 })();
