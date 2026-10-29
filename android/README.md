@@ -57,6 +57,10 @@ C:\Program Files\bilibili\resources\app.asar
   （`ic_launcher_foreground.xml` / `ic_launcher_background.xml`）和多尺寸 WebP；
 - 播放页创建媒体通知：封面、标题、UP 主/简介、进度条和播放/暂停，
   `MediaSession` + `MediaStyle` 保证系统媒体卡片状态与视频同步；
+- 深色模式：设置页「主窗口颜色模式」支持浅色/深色/跟随系统，立即切换并持久化，
+  重启后保持；播放窗口支持「跟随主窗口」；
+- 设置页常用开关（启动项、下载、缓存、播放、消息等）通过 `SharedPreferences`
+  持久化，重启后保持；
 - `fetch('https://api.bilibili.com/x/web-interface/nav')` 返回真实响应，
   `feed/rcmd` 返回 `code:0` 和真实视频数据，说明 API 代理和 CORS 已打通。
 

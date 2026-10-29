@@ -124,7 +124,60 @@
         });
     }
 
+    function getSetting(key, defaultValue) {
+        return (window.AndroidBridge && typeof window.AndroidBridge.getSetting === 'function')
+            ? window.AndroidBridge.getSetting(key, defaultValue)
+            : defaultValue;
+    }
+
+    function setSetting(key, value) {
+        if (window.AndroidBridge && typeof window.AndroidBridge.setSetting === 'function') {
+            window.AndroidBridge.setSetting(key, String(value));
+        }
+    }
+
     function callNativeSync(action) {
+        if (action === 'app/getTheme' || action === 'config/getTheme' ||
+            action === 'config/getMainWindowTheme') {
+            var windowType = arguments[1] || 'MainWindowTheme';
+            return (window.AndroidBridge && typeof window.AndroidBridge.getTheme === 'function')
+                ? window.AndroidBridge.getTheme(windowType)
+                : 'light';
+        }
+
+        var stringSettings = {
+            'config/getCustomConfig': ['customConfig', '{}'],
+            'config/getGeneralConfig': ['generalConfig', '{}'],
+            'config/getDownloadConfig': ['downloadConfig', '{}'],
+            'config/getDownloadPath': ['downloadPath', ''],
+            'config/getSystemFont': ['systemFont', 'system-ui'],
+            'system/getAppCache': ['appCacheSize', '0']
+        };
+        if (stringSettings[action]) {
+            return getSetting(stringSettings[action][0], stringSettings[action][1]);
+        }
+
+        var boolSettings = {
+            'config/getIsQuitByCloseMain': ['isQuitByCloseMain', false],
+            'config/getIsQuitDialogPoped': ['isQuitDialogPoped', true],
+            'config/getIsShowConsoleLog': ['isShowConsoleLog', true],
+            'config/getUseMediaSession': ['useMediaSession', false],
+            'config/getIsSelectedFirst': ['isSelectedFirst', false],
+            'config/getIsAppOpenAtLogin': ['isAppOpenAtLogin', false],
+            'config/getIsDisableGpu': ['isDisableGpu', false],
+            'config/getIsDevMode': ['isDevMode', false]
+        };
+        if (boolSettings[action]) {
+            return getSetting(
+                boolSettings[action][0],
+                String(boolSettings[action][1])
+            ) === 'true';
+        }
+
+        if (action === 'config/getDlParallelNum') {
+            return parseInt(getSetting('dlParallelNum', '1'), 10) || 1;
+        }
+
         switch (action) {
             case 'app/getInitInfo':
                 return JSON.stringify(INIT);
@@ -168,6 +221,8 @@
                 return '{}';
             case 'system/getFontsInfo':
                 return '[]';
+            case 'system/getIsDefaultPlayer':
+                return false;
             case 'system/getBuvidWlCode':
                 return '';
             case 'system/getBucketInfo':
@@ -204,6 +259,43 @@
 
     function callNative(action) {
         console.log('[bridge-async]', action);
+        if (action === 'config/setTheme') {
+            var windowType = arguments[1] || 'MainWindowTheme';
+            var theme = arguments[2] || 'system';
+            if (window.AndroidBridge && typeof window.AndroidBridge.setTheme === 'function') {
+                window.AndroidBridge.setTheme(windowType, theme);
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        var settingSetters = {
+            'config/setCustomConfig': 'customConfig',
+            'config/setGeneralConfig': 'generalConfig',
+            'config/setDownloadConfig': 'downloadConfig',
+            'config/setDownloadPath': 'downloadPath',
+            'config/setDlParallelNum': 'dlParallelNum',
+            'config/setSystemFont': 'systemFont',
+            'config/setIsQuitByCloseMain': 'isQuitByCloseMain',
+            'config/setIsQuitDialogPoped': 'isQuitDialogPoped',
+            'config/setIsShowConsoleLog': 'isShowConsoleLog',
+            'config/setUseMediaSession': 'useMediaSession',
+            'config/setIsSelectedFirst': 'isSelectedFirst',
+            'config/setIsAppOpenAtLogin': 'isAppOpenAtLogin',
+            'config/setIsDisableGpu': 'isDisableGpu',
+            'config/setIsDevMode': 'isDevMode'
+        };
+        if (settingSetters[action]) {
+            setSetting(settingSetters[action], arguments[1]);
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'system/clearAppCache') {
+            if (window.AndroidBridge && typeof window.AndroidBridge.clearAppCache === 'function') {
+                window.AndroidBridge.clearAppCache();
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'system/clearDNSCache') {
+            return Promise.resolve({ code: 0 });
+        }
         if (action === 'window/minimize' || action === 'window/miniPlayerWindow') {
             // 桌面客户端的最小化/小窗，在 Android 上落到系统 PiP。
             // 先通知页面切到迷你布局，PiP 小窗里就只剩视频和少量控件。

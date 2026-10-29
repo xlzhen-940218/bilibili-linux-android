@@ -103,6 +103,7 @@ class MainActivity : AppCompatActivity() {
         configureWebView()
         enterImmersive()
         requestNotificationPermission()
+        applyTheme()
 
         webView.loadUrl(savedInstanceState?.getString(STATE_URL) ?: START_URL)
 
@@ -419,8 +420,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+    private fun applyTheme() {
+        val dark = ThemePrefs.isDark(this)
+        val theme = if (dark) "dark" else "light"
+        val background = Color.parseColor(if (dark) "#17181A" else "#FFFFFF")
+        root.setBackgroundColor(background)
+        webView.setBackgroundColor(background)
+        val js = "(function(){var d=document.documentElement;if(!d)return;" +
+            "d.classList.toggle('bili_dark',$dark);" +
+            "d.classList.toggle('bili_light',${!dark});" +
+            "if(window.biliBridgePc&&window.biliBridgePc.emit){" +
+            "window.biliBridgePc.emit('config/themeChange',{data:'$theme'});}" +
+            "})()"
+        webView.evaluateJavascript(js, null)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyTheme()
+    }
+
+    private fun requestNotificationPermission() {        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
                 this,
                 android.Manifest.permission.POST_NOTIFICATIONS
@@ -604,6 +624,48 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun hidePlayback() {
             runOnUiThread { PlaybackNotification.cancel(this@MainActivity) }
+        }
+
+        @JavascriptInterface
+        fun getTheme(windowType: String?): String {
+            return ThemePrefs.effective(
+                this@MainActivity,
+                windowType ?: "MainWindowTheme"
+            )
+        }
+
+        @JavascriptInterface
+        fun setTheme(windowType: String?, theme: String?) {
+            if (theme.isNullOrEmpty()) {
+                return
+            }
+            if (windowType == "PlayerWindowTheme") {
+                ThemePrefs.setPlayer(this@MainActivity, theme)
+            } else {
+                ThemePrefs.setMain(this@MainActivity, theme)
+            }
+            runOnUiThread { applyTheme() }
+        }
+
+        @JavascriptInterface
+        fun getSetting(key: String, defaultValue: String): String {
+            return SettingsStore.get(this@MainActivity, key, defaultValue)
+        }
+
+        @JavascriptInterface
+        fun setSetting(key: String, value: String) {
+            SettingsStore.set(this@MainActivity, key, value)
+            if (key == "isShowConsoleLog") {
+                // 客户端用它判断是否保留 console，这里只持久化即可。
+            }
+        }
+
+        @JavascriptInterface
+        fun clearAppCache() {
+            runOnUiThread {
+                webView.clearCache(true)
+                SettingsStore.set(this@MainActivity, "appCacheSize", "0")
+            }
         }
 
         @JavascriptInterface
