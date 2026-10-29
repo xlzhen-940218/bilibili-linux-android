@@ -206,21 +206,25 @@
         console.log('[bridge-async]', action);
         if (action === 'window/minimize' || action === 'window/miniPlayerWindow') {
             // 桌面客户端的最小化/小窗，在 Android 上落到系统 PiP。
+            // 先通知页面切到迷你布局，PiP 小窗里就只剩视频和少量控件。
+            emit('window/playerWindowMiniChange', { data: true });
             if (window.AndroidBridge && typeof window.AndroidBridge.enterPip === 'function') {
                 window.AndroidBridge.enterPip();
             }
             return Promise.resolve({ code: 0 });
         }
         if (action === 'window/unminiPlayerWindow' || action === 'window/playerWindowRecover') {
+            emit('window/playerWindowMiniChange', { data: false });
             if (window.AndroidBridge && typeof window.AndroidBridge.exitPip === 'function') {
                 window.AndroidBridge.exitPip();
             }
             return Promise.resolve({ code: 0 });
         }
         if (action === 'window/toggleMaximize') {
-            // WebView 没有独立窗口，这里用沉浸式切换作为「最大化/还原」的反馈。
-            if (window.AndroidBridge && typeof window.AndroidBridge.toggleImmersive === 'function') {
-                window.AndroidBridge.toggleImmersive();
+            // 中间按钮：从迷你/小窗状态恢复成完整播放页。
+            emit('window/playerWindowMiniChange', { data: false });
+            if (window.AndroidBridge && typeof window.AndroidBridge.exitPip === 'function') {
+                window.AndroidBridge.exitPip();
             }
             return Promise.resolve({ code: 0 });
         }
