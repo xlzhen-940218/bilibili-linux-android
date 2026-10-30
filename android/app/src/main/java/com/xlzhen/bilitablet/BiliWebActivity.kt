@@ -71,6 +71,9 @@ open class BiliWebActivity : AppCompatActivity() {
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
     private var immersive = true
 
+    /** 被自家新窗口覆盖时置位，避免把「被覆盖」误判成「用户按 Home」而进入 PiP。 */
+    private var pipSuppressed = false
+
     private val loginLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -523,10 +526,24 @@ open class BiliWebActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return
         }
+        if (pipSuppressed) {
+            // 是新窗口把当前 Activity 顶下去，不是用户按 Home。
+            pipSuppressed = false
+            return
+        }
         val isPlayerPage = webView.url?.contains("player.html") == true
         if (customView != null || isPlayerPage) {
             enterPip()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        pipSuppressed = false
+    }
+
+    internal fun suppressPipOnLeave() {
+        pipSuppressed = true
     }
 
     protected fun enterPip() {
@@ -587,6 +604,24 @@ open class BiliWebActivity : AppCompatActivity() {
     }
 
     protected fun openPlayer(url: String) {
+        val target = if (url.startsWith("/")) "https://bilipc.bilibili.com$url" else url
+        val existing = PlayerActivity.currentInstance()
+        if (existing !== this && existing != null &&
+            PlayerActivity.isSameVideo(existing.playUrl, target)
+        ) {
+            // 首页卡片同时走 <a href> 和 window/openPlayerWindow，同一条视频只留一个播放页。
+            existing.bringToFrontIfNeeded()
+            return
+        }
+        if (existing == null && PlayerActivity.isLaunchingSameVideo(target)) {
+            // 上一个播放页还没创建完（startActivity 异步），不能再开第二个。
+            return
+        }
+        if (existing != null && !existing.isInPictureInPictureMode) {
+            // 新播放页会顶掉旧播放页；旧播放页被覆盖不是用户按 Home，不该自动进 PiP。
+            existing.suppressPipOnLeave()
+        }
+        PlayerActivity.rememberLaunch(target)
         val intent = Intent(this, PlayerActivity::class.java)
             .putExtra(PlayerActivity.EXTRA_URL, url)
             .addFlags(
