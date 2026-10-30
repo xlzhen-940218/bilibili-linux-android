@@ -36,4 +36,6 @@ class PlayerActivity : BiliWebActivity() {
     override fun onClose() {
         finish()
     }
+
+    override fun shouldHandleWebBack(): Boolean = false
 }

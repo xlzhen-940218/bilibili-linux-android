@@ -112,8 +112,8 @@ open class BiliWebActivity : AppCompatActivity() {
             override fun handleOnBackPressed() {
                 when {
                     customView != null -> exitFullscreen()
-                    webView.canGoBack() -> webView.goBack()
-                    else -> finish()
+                    shouldHandleWebBack() && webView.canGoBack() -> webView.goBack()
+                    else -> onClose()
                 }
             }
         })
@@ -561,6 +561,8 @@ open class BiliWebActivity : AppCompatActivity() {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(home)
     }
+
+    protected open fun shouldHandleWebBack(): Boolean = true
 
     protected open fun shouldOpenPlayerInNewActivity(): Boolean = false
 
