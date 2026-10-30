@@ -1,219 +1,161 @@
-**简体中文 | [繁體中文](README_zh-tw.MD) | [English](README_en.MD)**
+<p align="center">
+  <b>简体中文（Android 版）</b> ·
+  <a href="README_linux.MD">Linux 桌面版</a> ·
+  <a href="README_en.MD">English</a>（Linux） ·
+  <a href="README_zh-tw.MD">繁體中文</a>（Linux）
+</p>
 
-> **Android 平板版**：把哔哩哔哩 PC 客户端搬到 Android 平板，还原桌面级界面。
-> APK 下载：https://github.com/xlzhen-940218/bilibili-linux-android/releases
+# Bili Tablet
 
-<div align="center">
+**把哔哩哔哩 PC 客户端搬到 Android 平板。**
 
-  <img src="./res/icons/bilibili.svg" height="100px" width="100px"/>
+不是网页版套壳，也不是把手机 App 等比放大——这个项目直接复用官方桌面客户端的
+`render` 界面，在 Android WebView 里还原 PC 端的顶栏、左侧导航、四列卡片、
+播放器和窗口交互。
 
-  <h3>哔哩哔哩 Linux版</h3>
-  <br>
+[下载 APK](https://github.com/xlzhen-940218/bilibili-linux-android/releases) ·
+[截图](#截图) · [实现原理](#实现原理) · [构建](#构建)
 
-----
+## 截图
 
-[![aur](https://img.shields.io/aur/version/bilibili-bin)](https://aur.archlinux.org/packages/bilibili-bin)
+<p align="center">
+  <img src="./res/screenshots/android/home.webp" width="49%" alt="首页：单行顶栏、左侧导航、四列卡片" />
+  <img src="./res/screenshots/android/player.webp" width="49%" alt="播放页：左侧视频、右侧简介与推荐" />
+</p>
+<p align="center">
+  <img src="./res/screenshots/android/home-dark.webp" width="49%" alt="深色模式首页" />
+  <img src="./res/screenshots/android/pip.webp" width="49%" alt="画中画：首页浏览时小窗继续播放" />
+</p>
 
-  这是哔哩哔哩 Linux版
-  
-  SVG图标来自 [@Peternal](https://github.com/Peternal)
+## 为什么做这个
 
-  <br>
-</div>
+Android 平板上的哔哩哔哩 HD 版，本质是手机 UI 放大：
 
-## 介绍
+- 顶部大搜索栏 + 巨型轮播，首屏只有 1 个推荐和 4 个矮卡片；
+- 底部手机 tab 栏占掉一块屏幕；
+- 没有左侧导航、没有多列信息密度、没有 hover / 右键 / 分屏。
 
-本项目用到了：
+PC 客户端是另一套信息架构：左侧竖排导航、顶部频道栏、四列卡片网格、
+视频页左视频右推荐。这个项目把 PC 客户端的 `render` 页面直接搬进 Android，
+让 11 寸平板得到接近桌面的浏览体验。
 
-1. 反混淆
-2. 调试
-3. 脑子
+## 特性
 
-本项目完全开源，且没有任何代码加密操作，如有疑虑请自行审查代码或停止使用相关文件。
+### 桌面级界面
 
-## 特点
+- 官方 render 页面：单行顶栏、直播 / 推荐 / 热门 / 追番 / 影视、
+  左侧导航（首页 / 精选 / 动态 / 我的）、四列视频卡片；
+- 播放页：左侧视频 + 右侧简介 / 评论 / UP 主 / 推荐；
+- 个人空间：动态流、投稿视频、合集和系列；
+- 深色模式：浅色 / 深色 / 跟随系统，切换立即生效，重启后保持。
 
-1. 没有讨厌的标题栏
-2. 支持小分辨率屏幕全屏
-3. 检查更新支持
-4. 有能够关闭程序的菜单
-5. 支持漫游
-6. 外区搜索
-7. [弹幕共享](docs/help/弹幕共享.MD)
+### 完整功能
 
-## 使用方法
+- **登录**：官方 passport 登录页，二维码 / 账号密码 / 短信，Cookie 与主界面共享；
+- **播放器**：官方 nano 播放核心，视频、弹幕、字幕、倍速、选集、全屏；
+- **独立播放页**：首页和播放页是独立任务，播放页可单独分屏；关闭播放页回首页不刷新；
+- **窗口按钮**：首页最小化回桌面 / 全屏无响应 / 关闭退出；
+  播放页最小化回桌面 / 全屏切换进 PiP / 关闭回首页；
+- **画中画**：播放页或迷你播放器进入 Android 系统 PiP，小窗继续播放；
+- **媒体通知**：封面、标题、UP 主/简介、进度条、播放/暂停，MediaSession 同步状态；
+- **设置**：启动项、下载、缓存、播放、消息等开关持久化；
+- **其他**：下载、返回键、非 http(s) 协议、自适应图标。
 
-### 自动化构建
+### 大屏与平板
 
-请到 Release 页面下载：
+- 横屏为主，竖屏可用（竖屏是紧凑布局，推荐横屏）；
+- 11 寸及以上平板体验最佳；
+- 手机窄屏会自动退回移动布局，避免桌面布局被压到不可读。
 
-https://github.com/msojocs/bilibili-linux/releases
+## 下载
 
-即时构建版本：
+**https://github.com/xlzhen-940218/bilibili-linux-android/releases**
 
-https://github.com/msojocs/bilibili-linux/releases/tag/continuous
+- Android 8.0+（minSdk 26）；
+- 首次启动请允许通知权限（Android 13+），用于播放页媒体通知；
+- 侧载安装，不需要 root。
 
-### 手动构建
+## 实现原理
 
-1. 拉取代码
-   ```
-   git clone https://github.com/msojocs/bilibili-linux.git
-   cd bilibili-linux
-   ```
-2. 安装
-   ```
-   tools/setup-bilibili.sh
-   ```
-3. 启动
-   ```
-   bin/bilibili
-   ```
-### AppImage 安装
+项目没有重写客户端，而是复用官方桌面客户端的 Web 前端：
 
-请使用 [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher)
+1. 从本机官方 Windows 客户端
+   `C:\Program Files\bilibili\resources\app.asar` 提取 `render/`（Vue 应用，28 MB）；
+2. WebView 加载 `https://bilipc.bilibili.com/index.html`，
+   `shouldInterceptRequest` 把该域映射到 `assets/render/`；
+3. 注入 `bridge.js`，复刻 Electron preload 的 `window.biliBridgePc`，
+   补齐 `app/getInitInfo`、`system/getPlayerInfo`、`auth/getUserInfo` 等启动接口；
+4. 原生代理 `api.bilibili.com` / `app.bilibili.com` / `api.vc.bilibili.com` 的 GET 请求，
+   带 Cookie / Referer，回显 `Origin` 并补 CORS 头
+   （WebView 跨域，不能像 Electron 主进程那样直接放行）；
+5. Android 侧接管登录 Activity、播放器通知、系统 PiP、主题和设置持久化。
 
-## Gentoo Linux
-
-Emerge from [gentoo-zh overlay](https://github.com/microcai/gentoo-zh/tree/master/media-video/bilibili).
-
-### 额外补充
-
-如果阁下不喜欢电脑多装一个 Electron，可以自行提取发布版的 `app.asar` 并使用已安装 Electron 启动，建议的 Electron 版本是：`43.1.1`（`VaapiOnNvidiaGPUs` 需要 Electron 43+ / Chromium 130+）
-
-## GPU 加速配置
-
-Electron 43 (Chromium 150) 支持 Linux 下 VA-API 硬件视频解码。以下为推荐配置：
-
-### NVIDIA GPU
-
-1. 安装 VA-API → NVDEC 后端：
-   ```bash
-   # Arch Linux
-   sudo pacman -S libva-nvidia-driver
-   # Debian/Ubuntu
-   sudo apt install libva-nvidia-driver
-   ```
-
-2. 设置环境变量（libva 需要此变量定位 NVIDIA 后端）：
-   ```bash
-   export LIBVA_DRIVER_NAME=nvidia
-   ```
-
-3. 在 `~/.config/bilibili/bilibili-flags.conf` 中配置：
-
-   ```
-   --ignore-gpu-blocklist
-   --enable-features=AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL,VaapiOnNvidiaGPUs,VaapiIgnoreDriverChecks,PlatformHEVCDecoderSupport
-   --enable-gpu-rasterization
-   --enable-zero-copy
-   --disable-gpu-sandbox
-   ```
-
-   > **说明**：
-   > - `VaapiOnNvidiaGPUs` (Chromium 130+) 绕过 vaapi_wrapper 对 NVIDIA 设备的跳过检查
-   > - `AcceleratedVideoDecodeLinuxGL` / `AcceleratedVideoDecodeLinuxZeroCopyGL` 为 Chromium 150 推荐的 GL 零拷贝解码路径
-   > - Electron 28 不支持以上 feature，NVIDIA 视频硬解需要 Electron 43+
-
-### Intel / AMD GPU
+### 目录
 
 ```
---ignore-gpu-blocklist
---enable-features=AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL,VaapiVideoDecoder,VaapiIgnoreDriverChecks,PlatformHEVCDecoderSupport
---enable-gpu-rasterization
---enable-zero-copy
---disable-gpu-sandbox
+android/
+├── app/src/main/
+│   ├── assets/
+│   │   ├── bridge.js              # biliBridgePc polyfill
+│   │   └── render/                # 官方客户端 render 资源
+│   ├── java/com/xlzhen/bilitablet/
+│   │   ├── BiliWebActivity.kt     # WebView 基类：请求拦截、代理、PiP、主题、JS 桥
+│   │   ├── MainActivity.kt        # 首页：独立任务，关闭退出软件
+│   │   ├── PlayerActivity.kt      # 播放页：独立任务、可分屏、全屏切换进 PiP
+│   │   ├── LoginActivity.kt       # 官方 passport 登录
+│   │   ├── PlaybackNotification.kt
+│   │   ├── PlaybackController.kt
+│   │   ├── PlaybackActionReceiver.kt
+│   │   ├── ThemePrefs.kt
+│   │   └── SettingsStore.kt
+│   └── res/                       # 自适应图标、多尺寸 WebP
+└── gradle/                        # Gradle 9.6.0 wrapper
 ```
 
-Intel 核显与 AMD 独显/核显使用 Mesa VA-API 后端，无需额外安装驱动或设置环境变量。
+## 构建
 
-### 验证硬解
-
-播放视频后检查 GPU 解码引擎是否工作：
+要求：JDK 17、Android SDK Platform 35。
 
 ```bash
-cat /proc/$(pgrep -f "type=gpu-process.*bilibili")/fdinfo/* | grep drm-engine-video
+cd android
+export JAVA_HOME=/path/to/jdk17
+./gradlew assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-非零数值表示 GPU 解码引擎正在工作。也可访问 `chrome://gpu` 查看 "Video Decode" 状态。
+> 工程当前使用 AGP 9.4.0 / Kotlin 2.2.10 / Gradle 9.6.0。
 
-### 注意
+## 已验证
 
-- `--use-gl=angle --use-angle=gl` 在部分 Linux 桌面环境（尤其是 Wayland）下可能导致 VA-API 解码失效，建议使用 Electron 默认的 EGL/GLX 后端。
-- 如果系统开启了代理（如 Clash），`bilipc.bilibili.com` 经代理可能无法解析导致白屏。Electron 43+ 版本已内置代理绕过处理。
+在 Pixel 6（Android 17）和 11 寸 Android 平板上验证：
 
-## 开发者工具
+- 首页渲染出客户端原生顶栏、左侧竖排导航、四列卡片和真实推荐数据；
+- 首页点击视频只打开一个播放页，不会重复创建窗口或自动进入画中画；
+- 真实账号登录后，头像、昵称、等级、大会员、动态/关注/粉丝、历史记录正常；
+- 个人空间「动态」和「投稿」都能加载真实内容；
+- 播放页视频、字幕、评论、推荐正常，可回到主界面；
+- 播放页按 Home 或迷你播放器按钮进入系统 PiP，关闭按钮可退出并回首页；
+- 媒体通知包含封面、标题、UP 主/简介、进度和播放/暂停，状态与视频同步；
+- 深色模式切换立即生效，重启后保持；设置页开关重启后保持。
 
-### F12 开发者面板
+## 已知限制
 
-现已支持自行打开开发者工具，方法如下：
+- POST 请求（点赞、评论等）未代理：`shouldInterceptRequest` 拿不到 POST body；
+  登录页在 `passport.bilibili.com` 同域内完成，不经过该代理，因此登录本身不受影响；
+- 空间页动态/投稿依赖对官方 render JS 的本地补丁：
+  `Space.75f46eb4.js`、`AllFeedFragment.025ca0f7.js`、`index.55978b26.js`；
+  客户端资源更新后需要重新打；
+- 系统 PiP 小窗里页面按钮不可点击（Android 限制），只能使用系统提供的关闭/全屏；
+- 开机自启、下载目录选择、托盘行为等桌面能力在 Android 上尚未实现；
+- 竖屏时顶栏频道与搜索框会显得拥挤，推荐横屏使用。
 
-现已支持自行打开开发者工具，方法如下：
+## 声明
 
-尝试按下<kbd>F12</kbd>，如果没有反应就是没有开启；
+- 非官方项目，与哔哩哔哩无任何关联；
+- `render/` 资源版权归哔哩哔哩，仅供个人学习与自用；
+- 请勿用于商业分发或上架应用商店。
 
-登录界面有两层，内层右键打开，外层<kbd>F12</kbd>打开。
+## 致谢
 
-## 关于龙芯
-
-https://areweloongyet.com/docs/loong-or-loongarch
-
-|发行版|架构标识符|
-|------|----------|
-|AOSC OS|`loongarch64`|
-|Debian|<ul><li>旧世界：`loongarch64`</li><li>新世界：`loong64`</li></ul>|
-|Gentoo|`loong`|
-|Loong Arch Linux|`loong64`|
-|RPM 系|`loongarch64`|
-|Slackware|`loong64`|
-
-## 空降助手
-
-自动帮助阁下空降至关键位置。
-
-你需要提前安装`python3`软件包与`faster_whisper` `torch`模块。
-
-参考文档：[AiTranscribe](docs/AiTranscribe.MD)
-
-| 选项 | 说明 |
-|------|-----|
-| Whisper代理 | 模型下载需要代理, 形如：`http://127.0.0.1:1080` |
-| LD_LIBRARY_PATH | 可能遇到 `cudnn` 库找不到，[参考此处](https://github.com/MahmoudAshraf97/whisper-diarization/issues/259) |
-| AI识别TOKEN | https://www.bigmodel.cn/ 的Token，使用免费模型 `glm-4.5-flash` |
-
-## 切换语言
-
-1. 在主页点击右下角设定按钮
-2. 进入“其它设定”
-3. 在“语言设定”区域选择你想要的语言
-
-## 更新日志
-
-[CHANGELOG.md](CHANGELOG.md)
-
-## 预览
-
-![推荐](res/screenshots/1.png)
-
-![直播](res/screenshots/live.png)
-
-![检查更新](res/screenshots/update.png)
-
-![退出](res/screenshots/exit.png)
-
-![漫游](res/screenshots/roaming.png)
-
-## 感谢以下项目
-
-1. [BiliRoaming](https://github.com/yujincheng08/BiliRoaming)
-2. [解除B站区域限制](https://github.com/ipcjs/bilibili-helper)
-3. [小电视空降助手](https://github.com/hanydd/BilibiliSponsorBlock)
-
-## 免责声明
-
-License 仅对本项目生效，不针对其产物。
-
-哔哩哔哩客户端版权归上海宽娱数码科技有限公司所有；
-
-对于使用本项目产生的额外问题，如账户封禁被盗等，维护者不对此负责，请谨慎使用；
-
-如有不当之处，请联系本人，邮箱：jiyecafe@gmail.com
+- [bilibili-linux](https://github.com/msojocs/bilibili-linux)：本项目的思路来源；
+- 哔哩哔哩官方桌面客户端：render 界面与播放器核心。
