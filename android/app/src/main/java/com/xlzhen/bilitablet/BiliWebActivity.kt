@@ -246,6 +246,9 @@ open class BiliWebActivity : AppCompatActivity() {
                 val uri = request.url
                 val scheme = uri.scheme?.lowercase()
                 if (scheme == "http" || scheme == "https") {
+                    if (shouldBlockExternalNavigation(uri)) {
+                        return true
+                    }
                     // 首页导航到 player.html 时，改为启动独立播放页；首页本身保持不刷新。
                     if (shouldOpenPlayerInNewActivity() &&
                         uri.host == "bilipc.bilibili.com" &&
@@ -560,6 +563,8 @@ open class BiliWebActivity : AppCompatActivity() {
     }
 
     protected open fun shouldOpenPlayerInNewActivity(): Boolean = false
+
+    protected open fun shouldBlockExternalNavigation(uri: android.net.Uri): Boolean = false
 
     protected fun openPlayer(url: String) {
         val intent = Intent(this, PlayerActivity::class.java)

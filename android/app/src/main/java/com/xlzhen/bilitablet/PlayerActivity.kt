@@ -25,6 +25,14 @@ class PlayerActivity : BiliWebActivity() {
         enterPip()
     }
 
+    override fun shouldBlockExternalNavigation(uri: android.net.Uri): Boolean {
+        // 播放页只保留客户端 render；网页版会把 PiP 退出后的画面带偏。
+        val host = uri.host ?: return false
+        return host == "www.bilibili.com" ||
+            host == "bilibili.com" ||
+            host == "m.bilibili.com"
+    }
+
     override fun onClose() {
         finish()
     }
