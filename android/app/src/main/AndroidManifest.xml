@@ -41,6 +41,16 @@
         <receiver
             android:name=".PlaybackActionReceiver"
             android:exported="false" />
+
+        <activity
+            android:name=".PlayerActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
+            android:exported="false"
+            android:launchMode="standard"
+            android:resizeableActivity="true"
+            android:supportsPictureInPicture="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.BiliTablet" />
     </application>
 
 </manifest>

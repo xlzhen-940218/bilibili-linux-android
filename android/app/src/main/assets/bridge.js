@@ -296,9 +296,15 @@
         if (action === 'system/clearDNSCache') {
             return Promise.resolve({ code: 0 });
         }
-        if (action === 'window/minimize' || action === 'window/miniPlayerWindow') {
-            // 桌面客户端的最小化/小窗，在 Android 上落到系统 PiP。
-            // 先通知页面切到迷你布局，PiP 小窗里就只剩视频和少量控件。
+        if (action === 'window/minimize') {
+            // 首页/播放页的最小化：回到桌面，不关闭软件。
+            if (window.AndroidBridge && typeof window.AndroidBridge.moveToBack === 'function') {
+                window.AndroidBridge.moveToBack();
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'window/miniPlayerWindow' || action === 'window/pinPlayerWindow') {
+            // 播放页的迷你播放器按钮：切到系统 PiP。
             emit('window/playerWindowMiniChange', { data: true });
             if (window.AndroidBridge && typeof window.AndroidBridge.enterPip === 'function') {
                 window.AndroidBridge.enterPip();
@@ -307,35 +313,22 @@
         }
         if (action === 'window/unminiPlayerWindow' || action === 'window/playerWindowRecover') {
             emit('window/playerWindowMiniChange', { data: false });
-            if (window.AndroidBridge && typeof window.AndroidBridge.exitPip === 'function') {
-                window.AndroidBridge.exitPip();
-            }
             return Promise.resolve({ code: 0 });
         }
         if (action === 'window/toggleMaximize') {
-            // 中间按钮：从迷你/小窗状态恢复成完整播放页。
-            emit('window/playerWindowMiniChange', { data: false });
-            if (window.AndroidBridge && typeof window.AndroidBridge.exitPip === 'function') {
-                window.AndroidBridge.exitPip();
+            // 首页无响应；播放页切到系统 PiP。
+            if (window.AndroidBridge && typeof window.AndroidBridge.toggleMaximize === 'function') {
+                window.AndroidBridge.toggleMaximize();
             }
             return Promise.resolve({ code: 0 });
         }
         if (action === 'window/close' || action === 'window/forceClose') {
-            // 初始化阶段的 close 调用不处理，只有用户点击关闭按钮后才回首页/退出。
+            // 初始化阶段的 close 调用不处理，只有用户点击关闭按钮后才生效。
             if (!window.__biliUserInteracted) {
                 return Promise.resolve({ code: 0 });
             }
-            if (location.pathname.indexOf('player.html') >= 0) {
-                location.href = '/index.html#/page/home/recommends';
-            } else if (window.AndroidBridge && typeof window.AndroidBridge.closeApp === 'function') {
-                window.AndroidBridge.closeApp();
-            }
-            return Promise.resolve({ code: 0 });
-        }
-        if (action === 'window/pinPlayerWindow') {
-            // 播放页的迷你播放器按钮：转到 Android 系统画中画。
-            if (window.AndroidBridge && typeof window.AndroidBridge.enterPip === 'function') {
-                window.AndroidBridge.enterPip();
+            if (window.AndroidBridge && typeof window.AndroidBridge.closeWindow === 'function') {
+                window.AndroidBridge.closeWindow();
             }
             return Promise.resolve({ code: 0 });
         }
@@ -346,12 +339,16 @@
             return Promise.resolve({ code: 0 });
         }
         if (action === 'window/openMainWindow') {
-            // 播放页左上角「回到主界面」：WebView 里直接回首页。
-            location.href = '/index.html#/page/home/recommends';
+            // 播放页左上角「回到主界面」：结束播放页，回首页（首页不刷新）。
+            if (location.pathname.indexOf('player.html') >= 0 &&
+                window.AndroidBridge &&
+                typeof window.AndroidBridge.closeWindow === 'function') {
+                window.AndroidBridge.closeWindow();
+            }
             return Promise.resolve({ code: 0 });
         }
         if (action === 'window/openPlayerWindow') {
-            // 官方客户端会开独立播放窗口；WebView 里直接跳到同源的 player.html。
+            // 首页打开播放页：独立 Activity，允许分屏；首页保持不刷新。
             var info = arguments[1] || {};
             var parts = [];
             if (info.type) parts.push('type=' + encodeURIComponent(info.type));
@@ -360,7 +357,12 @@
             if (info.epid) parts.push('epid=' + encodeURIComponent(info.epid));
             if (info.seasonId) parts.push('seasonId=' + encodeURIComponent(info.seasonId));
             if (parts.length) {
-                location.href = '/player.html?' + parts.join('&');
+                var playerUrl = '/player.html?' + parts.join('&');
+                if (window.AndroidBridge && typeof window.AndroidBridge.openPlayer === 'function') {
+                    window.AndroidBridge.openPlayer(playerUrl);
+                } else {
+                    location.href = playerUrl;
+                }
             }
             return Promise.resolve({ code: 0 });
         }
