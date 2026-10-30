@@ -1,5 +1,7 @@
 package com.xlzhen.bilitablet
 
+import android.content.res.Configuration
+
 /**
  * 播放页独立 Activity：
  * - 与首页分开任务，允许手动分屏；
@@ -23,6 +25,17 @@ class PlayerActivity : BiliWebActivity() {
 
     override fun onToggleMaximize() {
         enterPip()
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (!isInPictureInPictureMode) {
+            // 从 PiP 退出后回首页，不停留在播放页。
+            finish()
+        }
     }
 
     override fun shouldBlockExternalNavigation(uri: android.net.Uri): Boolean {

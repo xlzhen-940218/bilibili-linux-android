@@ -304,8 +304,8 @@
             return Promise.resolve({ code: 0 });
         }
         if (action === 'window/miniPlayerWindow' || action === 'window/pinPlayerWindow') {
-            // 播放页的迷你播放器按钮：切到系统 PiP。
-            emit('window/playerWindowMiniChange', { data: true });
+            // 直接进系统 PiP，不切 screen_mini：官方迷你布局会加载网页版小窗，
+            // 在 Android 上会显示成网页版播放页。
             if (window.AndroidBridge && typeof window.AndroidBridge.enterPip === 'function') {
                 window.AndroidBridge.enterPip();
             }
