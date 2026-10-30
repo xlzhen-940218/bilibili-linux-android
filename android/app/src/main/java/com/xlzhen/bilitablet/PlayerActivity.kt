@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
+import androidx.lifecycle.Lifecycle
 import java.lang.ref.WeakReference
 
 /**
@@ -60,6 +61,9 @@ class PlayerActivity : BiliWebActivity() {
         }
     }
 
+    /** 退出 PiP 后是否还没回到前台（区分「展开播放页」和「关掉小窗」）。 */
+    private var pipExitPending = false
+
     /** 启动请求里的原始地址，可能是 `/player.html?...` 或绝对地址。 */
     val rawUrl: String
         get() = intent.getStringExtra(EXTRA_URL) ?: "/player.html"
@@ -113,10 +117,33 @@ class PlayerActivity : BiliWebActivity() {
         newConfig: Configuration
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        if (!isInPictureInPictureMode) {
-            // 从 PiP 退出后回首页，不停留在播放页。
-            finish()
+        // 退出 PiP 有两种情况：点小窗/全屏按钮回到播放页，或直接关掉小窗。
+        // 这里先记下，交给 onResume / onStop 决定，不能一退出 PiP 就 finish，
+        // 否则「回到播放页」也会被一起关掉。
+        pipExitPending = !isInPictureInPictureMode
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 回到了前台：是展开播放页，不是关闭小窗。
+        pipExitPending = false
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!pipExitPending || isChangingConfigurations) {
+            return
         }
+        // 小窗被关闭时 Activity 会进入后台且不再恢复；展开播放页则很快 onResume，
+        // onResume 会把 pipExitPending 清掉，这里就不再结束播放页。
+        window.decorView.postDelayed({
+            if (pipExitPending && !isFinishing && !isDestroyed &&
+                !isInPictureInPictureMode &&
+                !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            ) {
+                finish()
+            }
+        }, 1000)
     }
 
     override fun shouldBlockExternalNavigation(uri: android.net.Uri): Boolean {
