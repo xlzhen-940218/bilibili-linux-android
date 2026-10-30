@@ -249,13 +249,14 @@ open class BiliWebActivity : AppCompatActivity() {
                     if (shouldBlockExternalNavigation(uri)) {
                         return true
                     }
-                    // 首页导航到 player.html 时，改为启动独立播放页；首页本身保持不刷新。
-                    if (shouldOpenPlayerInNewActivity() &&
-                        uri.host == "bilipc.bilibili.com" &&
-                        uri.path?.endsWith("/player.html") == true
-                    ) {
-                        openPlayer(uri.toString())
-                        return true
+                    // 首页的视频链接（不管是 bilipc 的 player.html 还是网页版 /video/BVxxx）
+                    // 都转成客户端播放页，避免首页 WebView 自己跳到网页版。
+                    if (shouldOpenPlayerInNewActivity()) {
+                        val playerUrl = clientPlayerUrlFor(uri)
+                        if (playerUrl != null) {
+                            openPlayer(playerUrl)
+                            return true
+                        }
                     }
                     // 站内其他页面（含 render 的 search.html）留在 WebView。
                     return false
@@ -567,6 +568,23 @@ open class BiliWebActivity : AppCompatActivity() {
     protected open fun shouldOpenPlayerInNewActivity(): Boolean = false
 
     protected open fun shouldBlockExternalNavigation(uri: android.net.Uri): Boolean = false
+
+    private fun clientPlayerUrlFor(uri: android.net.Uri): String? {
+        val host = uri.host ?: return null
+        val path = uri.path ?: return null
+        if (host == "bilipc.bilibili.com" && path.endsWith("/player.html")) {
+            return uri.toString()
+        }
+        if ((host == "www.bilibili.com" || host == "m.bilibili.com") &&
+            path.startsWith("/video/")
+        ) {
+            val bvid = path.substringAfter("/video/").substringBefore("/")
+            if (bvid.startsWith("BV")) {
+                return "/player.html?type=ugc&bvid=$bvid"
+            }
+        }
+        return null
+    }
 
     protected fun openPlayer(url: String) {
         val intent = Intent(this, PlayerActivity::class.java)
