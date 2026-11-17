@@ -14,6 +14,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.util.Rational
 import android.view.View
 import android.view.ViewGroup
@@ -43,6 +44,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -81,6 +83,24 @@ open class BiliWebActivity : AppCompatActivity() {
         if (result.resultCode == RESULT_OK) {
             // 登录成功后 Cookie 已写入共享的 CookieManager，重载让 bridge 重新拉取 nav。
             webView.reload()
+        }
+    }
+
+    private val folderPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                contentResolver.takePersistableUriPermission(uri, takeFlags)
+            } catch (_: Exception) {}
+
+            val resolvedPath = resolveTreeUriPath(uri)
+            SettingsStore.set(this, "downloadPath", resolvedPath)
+            SettingsStore.set(this, "isDownloadDefault", "false")
+            SettingsStore.set(this, "downloadUri", uri.toString())
+            notifyDownloadInfoChanged()
+            Toast.makeText(this, "下载目录已更改为：$resolvedPath", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -713,6 +733,82 @@ open class BiliWebActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    private fun resolveTreeUriPath(uri: Uri): String {
+        val docId = DocumentsContract.getTreeDocumentId(uri) ?: return uri.path ?: uri.toString()
+        return if (docId.startsWith("primary:")) {
+            val sub = docId.substringAfter("primary:")
+            "/storage/emulated/0" + if (sub.isNotEmpty()) "/$sub" else ""
+        } else if (docId.contains(":")) {
+            val parts = docId.split(":", limit = 2)
+            "/storage/${parts[0]}" + if (parts.size > 1 && parts[1].isNotEmpty()) "/${parts[1]}" else ""
+        } else {
+            uri.path ?: docId
+        }
+    }
+
+    fun resetDownloadDirectory() {
+        val defaultPath = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "Bilibili"
+        ).absolutePath
+        SettingsStore.set(this, "downloadPath", defaultPath)
+        SettingsStore.set(this, "isDownloadDefault", "true")
+        SettingsStore.remove(this, "downloadUri")
+        notifyDownloadInfoChanged()
+        Toast.makeText(this, "已恢复默认下载目录", Toast.LENGTH_SHORT).show()
+    }
+
+    fun notifyDownloadInfoChanged() {
+        val infoJson = getDownloadInfoJson()
+        runOnUiThread {
+            val script = "(function(){" +
+                "if(window.biliBridgePc&&window.biliBridgePc.emit){" +
+                "window.biliBridgePc.emit('config/downloadInfoChange', { data: $infoJson });" +
+                "}" +
+                "})()"
+            webView.evaluateJavascript(script, null)
+        }
+    }
+
+    fun getDownloadInfoJson(): String {
+        val defaultPath = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "Bilibili"
+        ).absolutePath
+        val savedPath = SettingsStore.get(this, "downloadPath", defaultPath)
+        val path = if (savedPath.isBlank() || savedPath.startsWith("[object")) {
+            SettingsStore.set(this, "downloadPath", defaultPath)
+            SettingsStore.set(this, "isDownloadDefault", "true")
+            defaultPath
+        } else {
+            savedPath
+        }
+        val isDefault = SettingsStore.get(this, "isDownloadDefault", "true") == "true"
+        val isAutoStart = SettingsStore.get(this, "isDlAutoStart", "true") == "true"
+        val isDlNoSleep = SettingsStore.get(this, "isDlNoSleep", "false") == "true"
+        val obj = JSONObject().apply {
+            put("downloadPath", path)
+            put("isDefault", isDefault)
+            put("isAutoStart", isAutoStart)
+            put("isDlNoSleep", isDlNoSleep)
+            put("gameDownloadPath", "")
+            put("isGameDefault", true)
+        }
+        return obj.toString()
+    }
+
+    fun goToPage(page: String, metaJson: String?) {
+        val meta = if (!metaJson.isNullOrBlank()) metaJson else "{}"
+        val script = "(function(){" +
+            "if(window.biliBridgePc&&window.biliBridgePc.emit){" +
+            "window.biliBridgePc.emit('events/goToPage', { data: { page: '$page', meta: $meta } });" +
+            "}" +
+            "})()"
+        runOnUiThread {
+            webView.evaluateJavascript(script, null)
+        }
+    }
+
     @Suppress("unused")
     inner class JsBridge {
         @JavascriptInterface
@@ -862,6 +958,46 @@ open class BiliWebActivity : AppCompatActivity() {
                 ?: manager.getCookie("https://www.bilibili.com")
                 ?: manager.getCookie("https://bilipc.bilibili.com")
             return cookie?.contains("SESSDATA=") == true
+        }
+
+        @JavascriptInterface
+        fun getDownloadInfo(): String {
+            return getDownloadInfoJson()
+        }
+
+        @JavascriptInterface
+        fun chooseDownloadDirectory() {
+            runOnUiThread {
+                folderPickerLauncher.launch(null)
+            }
+        }
+
+        @JavascriptInterface
+        fun resetDownloadDirectory() {
+            runOnUiThread {
+                this@BiliWebActivity.resetDownloadDirectory()
+            }
+        }
+
+        @JavascriptInterface
+        fun createDownloadTasks(tasksJson: String) {
+            DownloadHelper.startDownloadTasks(this@BiliWebActivity, tasksJson, desktopUserAgent)
+        }
+
+        @JavascriptInterface
+        fun openMainWindowPage(page: String, metaJson: String?) {
+            runOnUiThread {
+                val main = MainActivity.currentInstance()
+                if (main != null) {
+                    main.goToPage(page, metaJson)
+                    val metaObj = try { JSONObject(metaJson ?: "{}") } catch (_: Exception) { null }
+                    if (metaObj?.optInt("tab") == 1) {
+                        main.bringToFrontIfNeeded()
+                    }
+                } else {
+                    this@BiliWebActivity.goToPage(page, metaJson)
+                }
+            }
         }
     }
 }

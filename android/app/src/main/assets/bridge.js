@@ -186,7 +186,7 @@
             'config/getCustomConfig': ['customConfig', '{}'],
             'config/getGeneralConfig': ['generalConfig', '{}'],
             'config/getDownloadConfig': ['downloadConfig', '{}'],
-            'config/getDownloadPath': ['downloadPath', ''],
+            'config/getDownloadPath': ['downloadPath', '/storage/emulated/0/Download/Bilibili'],
             'config/getSystemFont': ['systemFont', 'system-ui'],
             'system/getAppCache': ['appCacheSize', '0']
         };
@@ -266,10 +266,34 @@
                 return '{}';
             case 'system/getAppCache':
                 return '';
-            case 'config/getDownloadInfo':
-                return '{}';
+            case 'config/getDownloadInfo': {
+                var raw = (window.AndroidBridge && typeof window.AndroidBridge.getDownloadInfo === 'function')
+                    ? window.AndroidBridge.getDownloadInfo()
+                    : null;
+                if (raw) {
+                    try {
+                        return { code: 0, data: JSON.parse(raw) };
+                    } catch (e) {}
+                }
+                return {
+                    code: 0,
+                    data: {
+                        downloadPath: getSetting('downloadPath', '/storage/emulated/0/Download/Bilibili'),
+                        isDefault: getSetting('isDownloadDefault', 'true') === 'true',
+                        isAutoStart: true,
+                        isDlNoSleep: false,
+                        gameDownloadPath: '',
+                        isGameDefault: true
+                    }
+                };
+            }
             case 'config/getDlParallelNum':
-                return 2;
+                return { code: 0, data: parseInt(getSetting('dlParallelNum', '1'), 10) || 1 };
+            case 'system/isWin':
+            case 'window/isMiniPlayerMode':
+                return false;
+            case 'system/gamepadAction':
+                return null;
             case 'config/getIsShowLicense':
                 // 协议弹窗只适合首次启动；原型阶段直接跳过，避免每次重装都挡一层。
                 return false;
@@ -397,12 +421,86 @@
             }
             return Promise.resolve({ code: 0 });
         }
+        if (action === 'config/getDownloadInfo') {
+            var raw = (window.AndroidBridge && typeof window.AndroidBridge.getDownloadInfo === 'function')
+                ? window.AndroidBridge.getDownloadInfo()
+                : null;
+            var info = null;
+            if (raw) {
+                try {
+                    info = JSON.parse(raw);
+                } catch (e) {}
+            }
+            if (!info || !info.downloadPath || info.downloadPath.indexOf('[object') === 0) {
+                var p = getSetting('downloadPath', '/storage/emulated/0/Download/Bilibili');
+                if (!p || p.indexOf('[object') === 0) {
+                    p = '/storage/emulated/0/Download/Bilibili';
+                }
+                info = {
+                    downloadPath: p,
+                    isDefault: getSetting('isDownloadDefault', 'true') === 'true',
+                    isAutoStart: getSetting('isDlAutoStart', 'true') === 'true',
+                    isDlNoSleep: getSetting('isDlNoSleep', 'false') === 'true',
+                    gameDownloadPath: '',
+                    isGameDefault: true
+                };
+            }
+            return Promise.resolve({ code: 0, data: info });
+        }
+        if (action === 'config/setDownloadPath') {
+            var opts = arguments[1] || {};
+            if (opts.toDefault) {
+                if (window.AndroidBridge && typeof window.AndroidBridge.resetDownloadDirectory === 'function') {
+                    window.AndroidBridge.resetDownloadDirectory();
+                }
+            } else {
+                if (window.AndroidBridge && typeof window.AndroidBridge.chooseDownloadDirectory === 'function') {
+                    window.AndroidBridge.chooseDownloadDirectory();
+                }
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'config/getDlParallelNum') {
+            return Promise.resolve({
+                code: 0,
+                data: parseInt(getSetting('dlParallelNum', '1'), 10) || 1
+            });
+        }
+        if (action === 'config/setDownloadConfig') {
+            var cfg = arguments[1] || {};
+            if (cfg.type === 'parallel') {
+                setSetting('dlParallelNum', cfg.value);
+                emit('config/dlParallelNumChange', { data: cfg.value });
+            } else if (cfg.type === 'autoStart') {
+                setSetting('isDlAutoStart', cfg.value);
+            } else if (cfg.type === 'noSleep') {
+                setSetting('isDlNoSleep', cfg.value);
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'download/reloadVideoList') {
+            return Promise.resolve({ code: 0, data: [] });
+        }
+        if (action === 'download/getGroupAllItems' || action === 'download/getGroupItems') {
+            return Promise.resolve({ code: 0, data: [] });
+        }
+        if (action === 'download/getCompletedGroups' || action === 'download/getTaskList' || action === 'download/getAllVideoList') {
+            return Promise.resolve({ code: 0, data: [] });
+        }
+        if (action === 'download/createTasks') {
+            var payload = arguments[1] || {};
+            var tasks = payload.tasks || payload;
+            if (window.AndroidBridge && typeof window.AndroidBridge.createDownloadTasks === 'function') {
+                window.AndroidBridge.createDownloadTasks(JSON.stringify(tasks));
+            }
+            return Promise.resolve({ code: 0, data: [] });
+        }
+        if (action.indexOf('download/') === 0) {
+            return Promise.resolve({ code: 0, data: null });
+        }
         var settingSetters = {
             'config/setCustomConfig': 'customConfig',
             'config/setGeneralConfig': 'generalConfig',
-            'config/setDownloadConfig': 'downloadConfig',
-            'config/setDownloadPath': 'downloadPath',
-            'config/setDlParallelNum': 'dlParallelNum',
             'config/setSystemFont': 'systemFont',
             'config/setIsQuitByCloseMain': 'isQuitByCloseMain',
             'config/setIsQuitDialogPoped': 'isQuitDialogPoped',
@@ -514,6 +612,23 @@
                     window.handleMainWindowReady();
                 }
             }, 30);
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'window/openMainWindowPage') {
+            var payload = arguments[1] || {};
+            var page = payload.page || '';
+            var meta = payload.meta || null;
+            if (window.AndroidBridge && typeof window.AndroidBridge.openMainWindowPage === 'function') {
+                window.AndroidBridge.openMainWindowPage(page, meta ? JSON.stringify(meta) : '');
+            } else {
+                emit('events/goToPage', { data: { page: page, meta: meta } });
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'window/setMiniPlayerBtnsVisible' || action === 'window/catchClose' ||
+            action === 'window/playerWindowReady' || action === 'window/setPlayerVideoSize' ||
+            action === 'app/logRenderMsg') {
+            return Promise.resolve({ code: 0 });
         }
         return Promise.resolve(null);
     }
