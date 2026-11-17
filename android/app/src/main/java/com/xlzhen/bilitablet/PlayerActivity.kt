@@ -33,7 +33,7 @@ class PlayerActivity : BiliWebActivity() {
         fun isLaunchingSameVideo(url: String): Boolean {
             val previous = lastLaunchUrl ?: return false
             return isSameVideo(previous, url) &&
-                SystemClock.elapsedRealtime() - lastLaunchAt < DEDUPE_WINDOW_MS
+                (SystemClock.elapsedRealtime() - lastLaunchAt < DEDUPE_WINDOW_MS)
         }
 
         fun rememberLaunch(url: String) {
@@ -81,6 +81,8 @@ class PlayerActivity : BiliWebActivity() {
                 raw
             }
         }
+
+    override val windowType: String = "PlayerWindowTheme"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -146,7 +148,7 @@ class PlayerActivity : BiliWebActivity() {
         }, 1000)
     }
 
-    override fun shouldBlockExternalNavigation(uri: android.net.Uri): Boolean {
+    override fun shouldBlockExternalNavigation(uri: Uri): Boolean {
         // 播放页只保留客户端 render；网页版会把 PiP 退出后的画面带偏。
         val host = uri.host ?: return false
         return host == "www.bilibili.com" ||

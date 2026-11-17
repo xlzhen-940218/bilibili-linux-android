@@ -26,6 +26,25 @@
         /* ignore */
     }
 
+    (function injectStyles() {
+        var style = document.createElement('style');
+        style.id = 'bili-tablet-custom-style';
+        style.textContent = [
+            'html.bili_dark, html.bili_dark body, html.bili_dark #app { background-color: #17181A !important; }',
+            '.app_video, .app_video--player, .bpx-player-container, .bpx-player-video-wrap, .bpx-player-video-area, video { background-color: #000000 !important; }',
+            '.bpx-player-container[data-screen=full], .bpx-player-container[data-screen=web], .bpx-player-container[data-screen=mini] { background-color: #000000 !important; }'
+        ].join('\n');
+        var head = document.head || document.getElementsByTagName('head')[0];
+        if (head) {
+            head.appendChild(style);
+        } else {
+            document.addEventListener('DOMContentLoaded', function () {
+                var h = document.head || document.getElementsByTagName('head')[0];
+                h && h.appendChild(style);
+            });
+        }
+    })();
+
     // render 的 WBI 签名依赖 UNIFY_HTTP_WBI_CONFIG 和 bili_ticket。
     // 原生登录页不会走官方 auth/setCookies，所以这里从 localStorage 的 wbi_img_urls
     // 还原 keys，并放一个未过期的 ticket 占位，避免 isWbi 请求卡在 forticket 获取上。
@@ -44,9 +63,12 @@
                 localStorage.setItem('bili_ticket', 'bili-tablet');
                 localStorage.setItem(
                     'bili_ticket_expires',
-                    String(Math.floor(Date.now() / 1000) + 3600)
+                    String(Math.floor(Date.now() / 1000) + 86400)
                 );
             }
+            var exp = String(Math.floor(Date.now() / 1000) + 86400);
+            document.cookie = 'bili_ticket=bili-tablet; path=/; max-age=86400';
+            document.cookie = 'bili_ticket_expires=' + exp + '; path=/; max-age=86400';
         } catch (e) {
             /* localStorage 不可用时忽略 */
         }
@@ -90,6 +112,21 @@
                     return;
                 }
                 cachedUser = res.data.isLogin ? res.data : GUEST;
+                if (res.data.wbi_img) {
+                    var img = (res.data.wbi_img.img_url || '').split('/').pop().split('.')[0];
+                    var sub = (res.data.wbi_img.sub_url || '').split('/').pop().split('.')[0];
+                    if (img && sub) {
+                        window.UNIFY_HTTP_WBI_CONFIG = img + '-' + sub;
+                        try {
+                            localStorage.setItem('wbi_img_urls', img + '-' + sub);
+                        } catch (e) {}
+                    }
+                }
+                try {
+                    var exp = String(Math.floor(Date.now() / 1000) + 86400);
+                    document.cookie = 'bili_ticket=bili-tablet; path=/; max-age=86400';
+                    document.cookie = 'bili_ticket_expires=' + exp + '; path=/; max-age=86400';
+                } catch (e) {}
                 emit('auth/userInfoChange', { data: cachedUser });
             })
             .catch(function () {});
@@ -236,9 +273,45 @@
             case 'config/getIsShowLicense':
                 // 协议弹窗只适合首次启动；原型阶段直接跳过，避免每次重装都挡一层。
                 return false;
-            case 'store/getData':
-                // 协议弹窗用 store/getData 判断是否已同意；原型阶段直接视为已同意。
+            case 'store/getData': {
+                var key = arguments[1];
+                if (key === 'PRIVACY_POLICY_DIALOG_HIDDEN') {
+                    return true;
+                }
+                if (key === 'DYNAMIC_DEF_TAB_KEY') {
+                    try {
+                        var tab = localStorage.getItem('bili_store_' + key);
+                        if (tab) {
+                            try {
+                                tab = JSON.parse(tab);
+                            } catch (e) {}
+                        }
+                        if (tab === '2' || tab === 'video') return '2';
+                    } catch (e) {}
+                    return '1';
+                }
+                try {
+                    var val = localStorage.getItem('bili_store_' + key);
+                    if (val === null || val === undefined) {
+                        return null;
+                    }
+                    try {
+                        return JSON.parse(val);
+                    } catch (e) {
+                        return val;
+                    }
+                } catch (e) {
+                    return null;
+                }
+            }
+            case 'store/setData': {
+                var key = arguments[1];
+                var val = arguments[2];
+                try {
+                    localStorage.setItem('bili_store_' + key, JSON.stringify(val));
+                } catch (e) {}
                 return true;
+            }
             case 'auth/getUserInfo':
                 // 先返回已登录占位，避免首页在 nav 返回前一直按未登录渲染；
                 // refreshUser 拿到真实 nav 后会 emit userInfoChange，触发重新读取。
@@ -259,11 +332,68 @@
 
     function callNative(action) {
         console.log('[bridge-async]', action);
+        if (action === 'store/getData') {
+            var key = arguments[1];
+            if (key === 'PRIVACY_POLICY_DIALOG_HIDDEN') {
+                return Promise.resolve(true);
+            }
+            if (key === 'DYNAMIC_DEF_TAB_KEY') {
+                try {
+                    var tab = localStorage.getItem('bili_store_' + key);
+                    if (tab) {
+                        try {
+                            tab = JSON.parse(tab);
+                        } catch (e) {}
+                    }
+                    if (tab === '2' || tab === 'video') return Promise.resolve('2');
+                } catch (e) {}
+                return Promise.resolve('1');
+            }
+            try {
+                var val = localStorage.getItem('bili_store_' + key);
+                if (val === null || val === undefined) {
+                    return Promise.resolve(null);
+                }
+                try {
+                    return Promise.resolve(JSON.parse(val));
+                } catch (e) {
+                    return Promise.resolve(val);
+                }
+            } catch (e) {
+                return Promise.resolve(null);
+            }
+        }
+        if (action === 'store/setData') {
+            var key = arguments[1];
+            var val = arguments[2];
+            try {
+                localStorage.setItem('bili_store_' + key, JSON.stringify(val));
+            } catch (e) {}
+            return Promise.resolve({ code: 0 });
+        }
         if (action === 'config/setTheme') {
             var windowType = arguments[1] || 'MainWindowTheme';
             var theme = arguments[2] || 'system';
             if (window.AndroidBridge && typeof window.AndroidBridge.setTheme === 'function') {
                 window.AndroidBridge.setTheme(windowType, theme);
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'auth/setCookies') {
+            var list = arguments[1] || [];
+            if (Array.isArray(list)) {
+                list.forEach(function (c) {
+                    if (c && c.name && c.value != null) {
+                        try {
+                            var cookieStr = c.name + '=' + c.value + '; path=/; domain=.bilibili.com';
+                            document.cookie = cookieStr;
+                            if (window.AndroidBridge && typeof window.AndroidBridge.setCookie === 'function') {
+                                window.AndroidBridge.setCookie('https://api.bilibili.com', cookieStr);
+                                window.AndroidBridge.setCookie('https://bilipc.bilibili.com', cookieStr);
+                            }
+                        } catch (e) {}
+                    }
+                });
             }
             return Promise.resolve({ code: 0 });
         }

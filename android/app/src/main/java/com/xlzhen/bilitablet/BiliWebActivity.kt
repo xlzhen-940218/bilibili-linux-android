@@ -61,6 +61,7 @@ open class BiliWebActivity : AppCompatActivity() {
     }
 
     protected open val startUrl: String = "https://bilipc.bilibili.com/index.html"
+    protected open val windowType: String = "MainWindowTheme"
 
     private lateinit var root: FrameLayout
     private lateinit var webView: WebView
@@ -75,7 +76,7 @@ open class BiliWebActivity : AppCompatActivity() {
     private var pipSuppressed = false
 
     private val loginLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
+        ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         if (result.resultCode == RESULT_OK) {
             // 登录成功后 Cookie 已写入共享的 CookieManager，重载让 bridge 重新拉取 nav。
@@ -90,10 +91,14 @@ open class BiliWebActivity : AppCompatActivity() {
         bridgeScript = assets.open("bridge.js").bufferedReader().use { it.readText() }
         desktopUserAgent = buildDesktopUserAgent()
 
+        val isPlayer = windowType == "PlayerWindowTheme"
         root = FrameLayout(this)
-        root.setBackgroundColor(Color.WHITE)
+        root.setBackgroundColor(if (isPlayer) Color.BLACK else Color.WHITE)
 
         webView = WebView(this)
+        if (isPlayer) {
+            webView.setBackgroundColor(Color.BLACK)
+        }
         root.addView(
             webView,
             FrameLayout.LayoutParams(
@@ -101,7 +106,6 @@ open class BiliWebActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
-        PlaybackController.bind(webView)
         setContentView(root)
 
         configureWebView()
@@ -111,8 +115,10 @@ open class BiliWebActivity : AppCompatActivity() {
 
         webView.loadUrl(savedInstanceState?.getString(STATE_URL) ?: startUrl)
 
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(enabled = true) {
+                override fun handleOnBackPressed() {
                 when {
                     customView != null -> exitFullscreen()
                     shouldHandleWebBack() && webView.canGoBack() -> webView.goBack()
@@ -125,13 +131,12 @@ open class BiliWebActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView() {
         WebView.setWebContentsDebuggingEnabled(true)
-        webView.setBackgroundColor(Color.WHITE)
+        webView.setBackgroundColor(if (windowType == "PlayerWindowTheme") Color.BLACK else Color.WHITE)
         webView.overScrollMode = View.OVER_SCROLL_NEVER
 
         with(webView.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
-            databaseEnabled = true
             mediaPlaybackRequiresUserGesture = false
             javaScriptCanOpenWindowsAutomatically = false
             setSupportMultipleWindows(false)
@@ -184,8 +189,8 @@ open class BiliWebActivity : AppCompatActivity() {
             ): WebResourceResponse? {
                 val uri = request.url
                 val host = uri.host
-                if (host == "api.bilibili.com" || host == "app.bilibili.com" ||
-                    host == "api.vc.bilibili.com"
+                if ((host == "api.bilibili.com" || host == "app.bilibili.com" ||
+                        host == "api.vc.bilibili.com")
                 ) {
                     android.util.Log.d("BiliTabletNet", "${request.method} $uri")
                     val origin = header(request, "Origin")
@@ -201,7 +206,7 @@ open class BiliWebActivity : AppCompatActivity() {
                         )
                     }
                     if (request.method == "GET") {
-                        return proxyRequest(uri, origin, requestedHeaders)
+                        return proxyRequest(request, origin, requestedHeaders)
                     }
                     return null
                 }
@@ -327,7 +332,7 @@ open class BiliWebActivity : AppCompatActivity() {
 
     private fun header(request: WebResourceRequest, name: String): String? {
         return request.requestHeaders.entries
-            .firstOrNull { it.key.equals(name, ignoreCase = true) }
+            .firstOrNull { (k, _) -> k.equals(name, ignoreCase = true) }
             ?.value
     }
 
@@ -341,19 +346,49 @@ open class BiliWebActivity : AppCompatActivity() {
             "Vary" to "Origin"
         )
 
+    private fun getMergedCookieForBili(uri: Uri): String? {
+        val manager = CookieManager.getInstance()
+        val hosts = listOf(
+            uri.toString(),
+            "https://api.bilibili.com",
+            "https://www.bilibili.com",
+            "https://bilipc.bilibili.com",
+            "https://passport.bilibili.com"
+        )
+        val cookieMap = mutableMapOf<String, String>()
+        for (h in hosts) {
+            val raw = manager.getCookie(h) ?: continue
+            for (part in raw.split(';')) {
+                val trimmed = part.trim()
+                val eqIdx = trimmed.indexOf('=')
+                if (eqIdx > 0) {
+                    val k = trimmed.substring(0, eqIdx).trim()
+                    val v = trimmed.substring(eqIdx + 1).trim()
+                    if (k.isNotEmpty() && !cookieMap.containsKey(k)) {
+                        cookieMap[k] = v
+                    }
+                }
+            }
+        }
+        if (cookieMap.isEmpty()) return null
+        return cookieMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
+    }
+
     /**
      * render 页面在 https://bilipc.bilibili.com 下请求 api.bilibili.com，属于跨域；
      * Electron 主进程里不存在这个问题，WebView 里必须由原生层转发并补 CORS 头。
      * 只代理 GET：shouldInterceptRequest 拿不到 POST body，登录等请求先交给 WebView。
      */
     private fun proxyRequest(
-        uri: Uri,
+        request: WebResourceRequest,
         origin: String?,
         requestedHeaders: String?
     ): WebResourceResponse {
+        val uri = request.url
+        val cookie = getMergedCookieForBili(uri)
         android.util.Log.d(
             "BiliTabletNet",
-            "proxy $uri cookie=${CookieManager.getInstance().getCookie(uri.toString())?.take(24)}"
+            "proxy $uri cookie=${cookie?.take(48)}"
         )
         return try {
             val conn = URL(uri.toString()).openConnection() as HttpURLConnection
@@ -361,15 +396,34 @@ open class BiliWebActivity : AppCompatActivity() {
             conn.instanceFollowRedirects = true
             conn.connectTimeout = 10_000
             conn.readTimeout = 15_000
+            for ((key, value) in request.requestHeaders) {
+                if (key.equals("Accept-Encoding", ignoreCase = true) ||
+                    key.equals("Host", ignoreCase = true) ||
+                    key.equals("Cookie", ignoreCase = true) ||
+                    key.equals("User-Agent", ignoreCase = true)
+                ) {
+                    continue
+                }
+                conn.setRequestProperty(key, value)
+            }
             conn.setRequestProperty("User-Agent", desktopUserAgent)
-            conn.setRequestProperty("Referer", "https://www.bilibili.com/")
-            conn.setRequestProperty("Accept", "application/json, text/plain, */*")
+            if (conn.getRequestProperty("Referer").isNullOrEmpty()) {
+                conn.setRequestProperty("Referer", "https://www.bilibili.com/")
+            }
+            if (conn.getRequestProperty("Accept").isNullOrEmpty()) {
+                conn.setRequestProperty("Accept", "application/json, text/plain, */*")
+            }
             // 返回明文，避免压缩流交给 WebView 后无法解压。
             conn.setRequestProperty("Accept-Encoding", "identity")
-            CookieManager.getInstance().getCookie(uri.toString())?.let {
+            cookie?.let {
                 conn.setRequestProperty("Cookie", it)
             }
             val code = conn.responseCode
+            val isDynamic = uri.path?.contains("polymer/web-dynamic") == true ||
+                uri.path?.contains("feed") == true
+            if (isDynamic) {
+                android.util.Log.d("BiliTabletNet", "Dynamic GET $uri status=$code")
+            }
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val headers = corsHeaders(origin, requestedHeaders).toMutableMap()
             conn.contentType?.let { headers["Content-Type"] = it }
@@ -381,7 +435,8 @@ open class BiliWebActivity : AppCompatActivity() {
                 headers,
                 stream ?: ByteArrayInputStream(ByteArray(0))
             )
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.e("BiliTabletNet", "proxy failed $uri: ${e.message}")
             WebResourceResponse(
                 "application/json",
                 "utf-8",
@@ -416,7 +471,15 @@ open class BiliWebActivity : AppCompatActivity() {
         val view = customView ?: return
         root.removeView(view)
         customView = null
-        root.setBackgroundColor(Color.WHITE)
+        val isPlayer = windowType == "PlayerWindowTheme"
+        val effectiveTheme = ThemePrefs.effective(this, windowType)
+        val dark = effectiveTheme == "dark"
+        val background = if (isPlayer) {
+            Color.BLACK
+        } else {
+            Color.parseColor(if (dark) "#17181A" else "#FFFFFF")
+        }
+        root.setBackgroundColor(background)
         webView.visibility = View.VISIBLE
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         customViewCallback?.onCustomViewHidden()
@@ -436,17 +499,22 @@ open class BiliWebActivity : AppCompatActivity() {
         }
     }
 
-    private fun applyTheme() {
-        val dark = ThemePrefs.isDark(this)
-        val theme = if (dark) "dark" else "light"
-        val background = Color.parseColor(if (dark) "#17181A" else "#FFFFFF")
+    protected fun applyTheme() {
+        val isPlayer = windowType == "PlayerWindowTheme"
+        val effectiveTheme = ThemePrefs.effective(this, windowType)
+        val dark = effectiveTheme == "dark"
+        val background = if (isPlayer) {
+            Color.BLACK
+        } else {
+            Color.parseColor(if (dark) "#17181A" else "#FFFFFF")
+        }
         root.setBackgroundColor(background)
         webView.setBackgroundColor(background)
         val js = "(function(){var d=document.documentElement;if(!d)return;" +
             "d.classList.toggle('bili_dark',$dark);" +
             "d.classList.toggle('bili_light',${!dark});" +
             "if(window.biliBridgePc&&window.biliBridgePc.emit){" +
-            "window.biliBridgePc.emit('config/themeChange',{data:'$theme'});}" +
+            "window.biliBridgePc.emit('config/themeChange',{data:'$effectiveTheme'});}" +
             "})()"
         webView.evaluateJavascript(js, null)
     }
@@ -523,9 +591,6 @@ open class BiliWebActivity : AppCompatActivity() {
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            return
-        }
         if (pipSuppressed) {
             // 是新窗口把当前 Activity 顶下去，不是用户按 Home。
             pipSuppressed = false
@@ -547,9 +612,6 @@ open class BiliWebActivity : AppCompatActivity() {
     }
 
     protected fun enterPip() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            return
-        }
         try {
             val params = PictureInPictureParams.Builder()
                 .setAspectRatio(Rational(16, 9))
@@ -651,6 +713,7 @@ open class BiliWebActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    @Suppress("unused")
     inner class JsBridge {
         @JavascriptInterface
         fun startLogin() {
@@ -724,6 +787,7 @@ open class BiliWebActivity : AppCompatActivity() {
                 val position = obj.optLong("position")
                 val duration = obj.optLong("duration")
                 runOnUiThread {
+                    PlaybackController.bind(webView)
                     PlaybackNotification.update(
                         this@BiliWebActivity,
                         title,
@@ -773,9 +837,7 @@ open class BiliWebActivity : AppCompatActivity() {
         @JavascriptInterface
         fun setSetting(key: String, value: String) {
             SettingsStore.set(this@BiliWebActivity, key, value)
-            if (key == "isShowConsoleLog") {
-                // 客户端用它判断是否保留 console，这里只持久化即可。
-            }
+            // 客户端用它判断是否保留 console，这里只持久化即可。
         }
 
         @JavascriptInterface
@@ -784,6 +846,13 @@ open class BiliWebActivity : AppCompatActivity() {
                 webView.clearCache(true)
                 SettingsStore.set(this@BiliWebActivity, "appCacheSize", "0")
             }
+        }
+
+        @JavascriptInterface
+        fun setCookie(url: String, cookieString: String) {
+            val manager = CookieManager.getInstance()
+            manager.setCookie(url, cookieString)
+            manager.flush()
         }
 
         @JavascriptInterface

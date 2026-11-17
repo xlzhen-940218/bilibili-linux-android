@@ -16,7 +16,7 @@ object ThemePrefs {
         prefs(context).getString(KEY_MAIN, "system") ?: "system"
 
     fun getPlayer(context: Context): String =
-        prefs(context).getString(KEY_PLAYER, "followMain") ?: "followMain"
+        prefs(context).getString(KEY_PLAYER, "dark") ?: "dark"
 
     fun setMain(context: Context, value: String) {
         prefs(context).edit().putString(KEY_MAIN, value).apply()
@@ -39,6 +39,9 @@ object ThemePrefs {
     }
 
     fun effective(context: Context, windowType: String): String {
+        if (windowType == "SystemTheme") {
+            return if (isDark(context, "system")) "dark" else "light"
+        }
         val mainDark = isDark(context, getMain(context))
         if (windowType != "PlayerWindowTheme") {
             return if (mainDark) "dark" else "light"
