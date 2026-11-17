@@ -289,6 +289,18 @@
             }
             case 'config/getDlParallelNum':
                 return { code: 0, data: parseInt(getSetting('dlParallelNum', '1'), 10) || 1 };
+            case 'download/getCompletedGroups': {
+                var raw = (window.AndroidBridge && typeof window.AndroidBridge.getCompletedGroups === 'function')
+                    ? window.AndroidBridge.getCompletedGroups()
+                    : '[]';
+                try { return { code: 0, data: JSON.parse(raw) }; } catch (e) { return { code: 0, data: [] }; }
+            }
+            case 'download/getTaskList': {
+                var raw = (window.AndroidBridge && typeof window.AndroidBridge.getTaskList === 'function')
+                    ? window.AndroidBridge.getTaskList()
+                    : '[]';
+                try { return { code: 0, data: JSON.parse(raw) }; } catch (e) { return { code: 0, data: [] }; }
+            }
             case 'system/isWin':
             case 'window/isMiniPlayerMode':
                 return false;
@@ -481,11 +493,86 @@
         if (action === 'download/reloadVideoList') {
             return Promise.resolve({ code: 0, data: [] });
         }
-        if (action === 'download/getGroupAllItems' || action === 'download/getGroupItems') {
-            return Promise.resolve({ code: 0, data: [] });
+        if (action === 'download/getCompletedGroups') {
+            var raw = (window.AndroidBridge && typeof window.AndroidBridge.getCompletedGroups === 'function')
+                ? window.AndroidBridge.getCompletedGroups()
+                : '[]';
+            try {
+                return Promise.resolve({ code: 0, data: JSON.parse(raw) });
+            } catch (e) {
+                return Promise.resolve({ code: 0, data: [] });
+            }
         }
-        if (action === 'download/getCompletedGroups' || action === 'download/getTaskList' || action === 'download/getAllVideoList') {
-            return Promise.resolve({ code: 0, data: [] });
+        if (action === 'download/getTaskList') {
+            var raw = (window.AndroidBridge && typeof window.AndroidBridge.getTaskList === 'function')
+                ? window.AndroidBridge.getTaskList()
+                : '[]';
+            try {
+                return Promise.resolve({ code: 0, data: JSON.parse(raw) });
+            } catch (e) {
+                return Promise.resolve({ code: 0, data: [] });
+            }
+        }
+        if (action === 'download/getGroupAllItems' || action === 'download/getGroupItems') {
+            var p = arguments[1] || {};
+            var gid = String(p.groupId || '');
+            var raw = (window.AndroidBridge && typeof window.AndroidBridge.getGroupAllItems === 'function')
+                ? window.AndroidBridge.getGroupAllItems(gid)
+                : '[]';
+            try {
+                return Promise.resolve({ code: 0, data: JSON.parse(raw) });
+            } catch (e) {
+                return Promise.resolve({ code: 0, data: [] });
+            }
+        }
+        if (action === 'download/getAllVideoList') {
+            var p = arguments[1] || {};
+            var search = String(p.search || '');
+            var raw = (window.AndroidBridge && typeof window.AndroidBridge.getAllVideoList === 'function')
+                ? window.AndroidBridge.getAllVideoList(search)
+                : '[]';
+            try {
+                return Promise.resolve({ code: 0, data: JSON.parse(raw) });
+            } catch (e) {
+                return Promise.resolve({ code: 0, data: [] });
+            }
+        }
+        if (action === 'download/deleteTasks') {
+            var p = arguments[1] || {};
+            var taskIds = p.taskIds || [];
+            if (window.AndroidBridge && typeof window.AndroidBridge.deleteTasks === 'function') {
+                window.AndroidBridge.deleteTasks(JSON.stringify(taskIds));
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'download/deleteGroups') {
+            var p = arguments[1] || {};
+            var groupIds = p.groupIds || [];
+            if (window.AndroidBridge && typeof window.AndroidBridge.deleteGroups === 'function') {
+                window.AndroidBridge.deleteGroups(JSON.stringify(groupIds));
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'download/deleteGroupItems') {
+            var p = arguments[1] || {};
+            var groupId = String(p.groupId || '');
+            var itemIds = p.itemIds || [];
+            if (window.AndroidBridge && typeof window.AndroidBridge.deleteGroupItems === 'function') {
+                window.AndroidBridge.deleteGroupItems(groupId, JSON.stringify(itemIds));
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'download/deleteAllTasks') {
+            if (window.AndroidBridge && typeof window.AndroidBridge.deleteAllTasks === 'function') {
+                window.AndroidBridge.deleteAllTasks();
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'download/deleteAllGroups') {
+            if (window.AndroidBridge && typeof window.AndroidBridge.deleteAllGroups === 'function') {
+                window.AndroidBridge.deleteAllGroups();
+            }
+            return Promise.resolve({ code: 0 });
         }
         if (action === 'download/createTasks') {
             var payload = arguments[1] || {};

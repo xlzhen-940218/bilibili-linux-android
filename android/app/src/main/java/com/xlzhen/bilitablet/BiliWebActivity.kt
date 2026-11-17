@@ -60,6 +60,53 @@ open class BiliWebActivity : AppCompatActivity() {
 
     companion object {
         private const val STATE_URL = "bili_tablet_url"
+        private val activeActivities = mutableListOf<BiliWebActivity>()
+
+        fun registerActivity(activity: BiliWebActivity) {
+            synchronized(activeActivities) {
+                if (!activeActivities.contains(activity)) {
+                    activeActivities.add(activity)
+                }
+            }
+        }
+
+        fun unregisterActivity(activity: BiliWebActivity) {
+            synchronized(activeActivities) {
+                activeActivities.remove(activity)
+            }
+        }
+
+        fun broadcastProgress(itemId: Long, progress: Int, downloadedSize: Long, totalSize: Long) {
+            val script = "(function(){" +
+                "if(window.biliBridgePc&&window.biliBridgePc.emit){" +
+                "window.biliBridgePc.emit('download/progressChange',{data:{itemId:$itemId,progress:$progress,downloadedSize:$downloadedSize,loadedSize:$downloadedSize,totalSize:$totalSize,status:'downloading'}});" +
+                "}" +
+                "})()"
+            synchronized(activeActivities) {
+                activeActivities.forEach { act ->
+                    act.runOnUiThread {
+                        try { act.webView.evaluateJavascript(script, null) } catch (_: Exception) {}
+                    }
+                }
+            }
+        }
+
+        fun broadcastStatusChange(itemId: Long, status: String) {
+            val script = "(function(){" +
+                "if(window.biliBridgePc&&window.biliBridgePc.emit){" +
+                "window.biliBridgePc.emit('download/statusChange',{data:{itemId:$itemId,status:'$status'}});" +
+                "window.biliBridgePc.emit('download/itemListEvent',{data:{}});" +
+                "window.biliBridgePc.emit('download/taskListEvent',{data:{}});" +
+                "}" +
+                "})()"
+            synchronized(activeActivities) {
+                activeActivities.forEach { act ->
+                    act.runOnUiThread {
+                        try { act.webView.evaluateJavascript(script, null) } catch (_: Exception) {}
+                    }
+                }
+            }
+        }
     }
 
     protected open val startUrl: String = "https://bilipc.bilibili.com/index.html"
@@ -106,6 +153,7 @@ open class BiliWebActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        registerActivity(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         bridgeScript = assets.open("bridge.js").bufferedReader().use { it.readText() }
@@ -722,6 +770,7 @@ open class BiliWebActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        unregisterActivity(this)
         if (customView != null) {
             exitFullscreen()
         }
@@ -982,6 +1031,71 @@ open class BiliWebActivity : AppCompatActivity() {
         @JavascriptInterface
         fun createDownloadTasks(tasksJson: String) {
             DownloadHelper.startDownloadTasks(this@BiliWebActivity, tasksJson, desktopUserAgent)
+        }
+
+        @JavascriptInterface
+        fun getCompletedGroups(): String {
+            return DownloadTaskStore.getCompletedGroupsJson(this@BiliWebActivity)
+        }
+
+        @JavascriptInterface
+        fun getTaskList(): String {
+            return DownloadTaskStore.getTaskListJson(this@BiliWebActivity)
+        }
+
+        @JavascriptInterface
+        fun getGroupAllItems(groupId: String): String {
+            return DownloadTaskStore.getGroupAllItemsJson(this@BiliWebActivity, groupId)
+        }
+
+        @JavascriptInterface
+        fun getAllVideoList(search: String): String {
+            return DownloadTaskStore.getAllVideoListJson(this@BiliWebActivity, search)
+        }
+
+        @JavascriptInterface
+        fun deleteTasks(itemIdsJson: String) {
+            try {
+                val array = org.json.JSONArray(itemIdsJson)
+                val list = mutableListOf<Long>()
+                for (i in 0 until array.length()) list.add(array.getLong(i))
+                DownloadTaskStore.deleteTasks(this@BiliWebActivity, list)
+                broadcastStatusChange(0L, "deleted")
+            } catch (_: Exception) {}
+        }
+
+        @JavascriptInterface
+        fun deleteGroups(groupIdsJson: String) {
+            try {
+                val array = org.json.JSONArray(groupIdsJson)
+                val list = mutableListOf<String>()
+                for (i in 0 until array.length()) list.add(array.getString(i))
+                DownloadTaskStore.deleteGroups(this@BiliWebActivity, list)
+                broadcastStatusChange(0L, "deleted")
+            } catch (_: Exception) {}
+        }
+
+        @JavascriptInterface
+        fun deleteGroupItems(groupId: String, itemIdsJson: String) {
+            try {
+                val array = org.json.JSONArray(itemIdsJson)
+                val list = mutableListOf<Long>()
+                for (i in 0 until array.length()) list.add(array.getLong(i))
+                DownloadTaskStore.deleteGroupItems(this@BiliWebActivity, groupId, list)
+                broadcastStatusChange(0L, "deleted")
+            } catch (_: Exception) {}
+        }
+
+        @JavascriptInterface
+        fun deleteAllTasks() {
+            DownloadTaskStore.deleteAllTasks(this@BiliWebActivity)
+            broadcastStatusChange(0L, "deleted")
+        }
+
+        @JavascriptInterface
+        fun deleteAllGroups() {
+            DownloadTaskStore.deleteAllGroups(this@BiliWebActivity)
+            broadcastStatusChange(0L, "deleted")
         }
 
         @JavascriptInterface
