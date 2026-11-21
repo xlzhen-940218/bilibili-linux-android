@@ -30,6 +30,7 @@ declare global {
   // Node.js 全局变量
   var bootstrapEvents: EventEmitter;
   var isFiredByEntry: boolean;
+  var APP_HASH_CODE: string;
   var runtimeConf: {
     exWebPreferences: Record<string, unknown>
   }
@@ -54,10 +55,17 @@ declare global {
         isMinimized: () => boolean
         restore: () => void
       } | null,
+      isSingleWindowMode: false,
       isAppSleeping: false,
       loginWindow: object,
       loginRiskWindow: object
-    }
+    },
+    windowService: undefined as {
+      winHostService?: {
+        layoutShownSurface(): void
+        layoutPlayerFloat(): void
+      }
+    } | undefined
   }
   var server: ReturnType<typeof https.createServer>
 }
