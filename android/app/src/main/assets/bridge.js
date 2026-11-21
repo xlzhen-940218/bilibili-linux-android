@@ -80,7 +80,7 @@
         IS_LINUX: false,
         IS_DEV: false,
         IS_RELEASE: true,
-        APP_VERSION: '1.19.0',
+        APP_VERSION: '1.20.0',
         IS_DEV_M: false,
         JSB_PRELOAD_URL: '',
         appId: 'com.bilibili.app',
@@ -251,7 +251,7 @@
                 // 推荐接口 Oc() 会直接解构这个返回值，返回 null 会让请求发不出去。
                 return { isWeChatInstalled: false };
             case 'app/getAppInfo':
-                return { version: '1.19.0', appId: 'com.bilibili.app', channel: 'official' };
+                return { version: '1.20.0', appId: 'com.bilibili.app', channel: 'official' };
             case 'config/getRemoteConfig':
             case 'config/getGeneralConfig':
             case 'system/getAbTestInfo':

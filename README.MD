@@ -87,7 +87,7 @@ PC 客户端是另一套信息架构：左侧竖排导航、顶部频道栏、�
 项目没有重写客户端，而是复用官方桌面客户端的 Web 前端：
 
 1. 从本机官方 Windows 客户端
-   `C:\Program Files\bilibili\resources\app.asar` 提取 `render/`（Vue 应用，28 MB）；
+   `C:\Program Files\bilibili\resources\app.asar` 提取 `render/`（Vue 应用，26.7 MB）；
 2. WebView 加载 `https://bilipc.bilibili.com/index.html`，
    `shouldInterceptRequest` 把该域映射到 `assets/render/`；
 3. 注入 `bridge.js`，复刻 Electron preload 的 `window.biliBridgePc`，
@@ -155,8 +155,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - POST 请求（点赞、投币、评论等）未代理：`shouldInterceptRequest` 拿不到 POST body；
   登录页在 `passport.bilibili.com` 同域内完成，不经过该代理，因此登录本身不受影响；
 - 空间页动态/投稿、评论详情依赖对官方 render JS 的本地补丁：
-  `Space.75f46eb4.js`、`AllFeedFragment.025ca0f7.js`、`index.55978b26.js`
+  `Space.92980501.js`、`AllFeedFragment.c4785211.js`、`index.75356589.js`
   （APP_VERSION 兜底、评论详情改用 `reload` 重置状态）；客户端资源更新后需要重新打；
+  官方每次更新都会重算 chunk 文件名里的内容哈希，打补丁前需先按内容定位新文件，
+  且文件名变化后 `bridge.js` 里的 `APP_VERSION` 也要同步为新客户端版本；
 - 系统 PiP 小窗里页面按钮不可点击（Android 限制），只能使用系统提供的关闭/全屏；
 - 开机自启、托盘行为等桌面能力在 Android 上尚未支持；
 - 竖屏时顶栏频道与搜索框会显得拥挤，推荐横屏使用。
