@@ -52,6 +52,8 @@ PC 客户端是另一套信息架构：左侧竖排导航、顶部频道栏、�
 ### 完整功能
 
 - **登录**：官方 passport 登录页，二维码 / 账号密码 / 短信，Cookie 与主界面及原生代理共享；
+  登录态对齐 PC 客户端：登录时拦截 passport 接口拿到 `refresh_token` 并落盘，
+  启动时恢复 Cookie，并按客户端的票据续期流程定期续期，避免「今天登录、明天就掉线」；
 - **播放器**：官方 nano 播放核心，视频、弹幕、字幕、倍速、选集、全屏，纯黑背景沉浸体验；
 - **独立播放页**：首页和播放页是独立任务，播放页可单独分屏；关闭播放页回首页不刷新；
 - **窗口按钮**：首页最小化回桌面 / 全屏无响应 / 关闭退出；
@@ -109,7 +111,11 @@ android/
 │   │   ├── BiliWebActivity.kt     # WebView 基类：请求拦截、代理、PiP、主题、JS 桥
 │   │   ├── MainActivity.kt        # 首页：独立任务，关闭退出软件
 │   │   ├── PlayerActivity.kt      # 播放页：独立任务、纯黑底色、可分屏、全屏切换进 PiP
-│   │   ├── LoginActivity.kt       # 官方 passport 登录
+│   │   ├── LoginActivity.kt       # 官方 passport 登录 + 拦截登录接口取 refresh_token
+│   │   ├── LoginSessionManager.kt # 登录态判定、Cookie 恢复、票据自动续期
+│   │   ├── AuthCookieStore.kt     # 登录 Cookie / refresh_token 持久化
+│   │   ├── BiliPassportApi.kt     # passport 票据相关接口
+│   │   ├── BiliCrypto.kt          # 票据 AES-256-GCM 加解密
 │   │   ├── DownloadHelper.kt      # 视频流式下载、通知栏实时进度、调起本地播放器
 │   │   ├── DownloadTaskStore.kt   # 离线缓存任务持久化、本地视频目录扫描与管理
 │   │   ├── PlaybackNotification.kt

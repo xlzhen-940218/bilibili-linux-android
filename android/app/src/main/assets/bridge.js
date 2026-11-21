@@ -45,9 +45,15 @@
         }
     })();
 
-    // render 的 WBI 签名依赖 UNIFY_HTTP_WBI_CONFIG 和 bili_ticket。
+    // render 的 WBI 签名依赖 UNIFY_HTTP_WBI_CONFIG。
     // 原生登录页不会走官方 auth/setCookies，所以这里从 localStorage 的 wbi_img_urls
-    // 还原 keys，并放一个未过期的 ticket 占位，避免 isWbi 请求卡在 forticket 获取上。
+    // 还原 keys。
+    //
+    // 注意：不要在这里伪造 bili_ticket / bili_ticket_expires。
+    // 官方客户端里这两个 cookie 由 render 自己的 forticket 流程获取并通过
+    // auth/setCookies 写回（带真实 expirationDate），并且每 30 分钟检查一次是否临近过期。
+    // 之前这里写死 max-age=86400 的假票据，会让 render 的过期判断一直认为票据还新鲜，
+    // 于是永远不去换真正的票据；服务端那边的登录票据过期后登录态就掉了（约一天）。
     (function seedWbi() {
         try {
             var urls = localStorage.getItem('wbi_img_urls');
@@ -59,16 +65,6 @@
                     window.UNIFY_HTTP_WBI_CONFIG = img + '-' + sub;
                 }
             }
-            if (!localStorage.getItem('bili_ticket')) {
-                localStorage.setItem('bili_ticket', 'bili-tablet');
-                localStorage.setItem(
-                    'bili_ticket_expires',
-                    String(Math.floor(Date.now() / 1000) + 86400)
-                );
-            }
-            var exp = String(Math.floor(Date.now() / 1000) + 86400);
-            document.cookie = 'bili_ticket=bili-tablet; path=/; max-age=86400';
-            document.cookie = 'bili_ticket_expires=' + exp + '; path=/; max-age=86400';
         } catch (e) {
             /* localStorage 不可用时忽略 */
         }
@@ -122,11 +118,6 @@
                         } catch (e) {}
                     }
                 }
-                try {
-                    var exp = String(Math.floor(Date.now() / 1000) + 86400);
-                    document.cookie = 'bili_ticket=bili-tablet; path=/; max-age=86400';
-                    document.cookie = 'bili_ticket_expires=' + exp + '; path=/; max-age=86400';
-                } catch (e) {}
                 emit('auth/userInfoChange', { data: cachedUser });
             })
             .catch(function () {});
@@ -416,22 +407,66 @@
             return Promise.resolve({ code: 0 });
         }
         if (action === 'auth/setCookies') {
+            // 官方客户端的 setCookies 会带上 expirationDate / isExpiredRemove，
+            // 并把 cookie 按真实过期时间持久化（secureStore）。
+            // 这里必须照做：不带过期时间写 document.cookie 会变成会话 cookie，
+            // 进程一死就没了，render 的票据过期判断也就永远失效。
             var list = arguments[1] || [];
             if (Array.isArray(list)) {
+                var nativeCookies = [];
                 list.forEach(function (c) {
                     if (c && c.name && c.value != null) {
                         try {
-                            var cookieStr = c.name + '=' + c.value + '; path=/; domain=.bilibili.com';
+                            var name = c.name;
+                            var value = String(c.value);
+                            var expirationDate = typeof c.expirationDate === 'number' ? c.expirationDate : 0;
+                            var expired = c.isExpiredRemove === true ||
+                                (expirationDate > 0 && expirationDate * 1000 <= Date.now());
+                            var cookieStr = name + '=' + value + '; path=/; domain=.bilibili.com';
+                            if (expired) {
+                                // 官方语义：isExpiredRemove 表示把该 cookie 标记为过期删除。
+                                cookieStr += '; max-age=0';
+                                expirationDate = 0;
+                            } else if (expirationDate > 0) {
+                                cookieStr += '; expires=' + new Date(expirationDate * 1000).toUTCString();
+                            }
                             document.cookie = cookieStr;
                             if (window.AndroidBridge && typeof window.AndroidBridge.setCookie === 'function') {
                                 window.AndroidBridge.setCookie('https://api.bilibili.com', cookieStr);
                                 window.AndroidBridge.setCookie('https://bilipc.bilibili.com', cookieStr);
+                                window.AndroidBridge.setCookie('https://www.bilibili.com', cookieStr);
                             }
+                            nativeCookies.push({
+                                name: name,
+                                value: value,
+                                expirationDate: expirationDate
+                            });
                         } catch (e) {}
                     }
                 });
+                if (nativeCookies.length &&
+                    window.AndroidBridge && typeof window.AndroidBridge.setAuthCookies === 'function') {
+                    window.AndroidBridge.setAuthCookies(JSON.stringify(nativeCookies));
+                }
             }
             return Promise.resolve({ code: 0 });
+        }
+        if (action === 'auth/setRefreshToken') {
+            // 官方客户端在登录窗口拦截登录 XHR，拿到 refresh_token 后交给原生层保存，
+            // 之后靠它续期登录票据。Android 侧由原生登录页拦截，这里做兜底转发。
+            var payload = arguments[1] || {};
+            var token = payload.token || payload.refresh_token || '';
+            if (token && window.AndroidBridge && typeof window.AndroidBridge.setRefreshToken === 'function') {
+                window.AndroidBridge.setRefreshToken(String(token));
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'auth/getStoredCookies') {
+            var stored = '[]';
+            if (window.AndroidBridge && typeof window.AndroidBridge.getAuthCookies === 'function') {
+                stored = window.AndroidBridge.getAuthCookies() || '[]';
+            }
+            return Promise.resolve({ code: 0, data: JSON.parse(stored) });
         }
         if (action === 'config/getDownloadInfo') {
             var raw = (window.AndroidBridge && typeof window.AndroidBridge.getDownloadInfo === 'function')

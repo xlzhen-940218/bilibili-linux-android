@@ -13,6 +13,8 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.util.Rational
@@ -60,6 +62,10 @@ open class BiliWebActivity : AppCompatActivity() {
 
     companion object {
         private const val STATE_URL = "bili_tablet_url"
+
+        /** 登录态判定 + 票据续期的检查间隔。官方客户端在窗口就绪时检查一次，这里做周期检查。 */
+        private const val LOGIN_CHECK_INTERVAL_MS = 30 * 60 * 1000L
+
         private val activeActivities = mutableListOf<BiliWebActivity>()
 
         fun registerActivity(activity: BiliWebActivity) {
@@ -121,6 +127,9 @@ open class BiliWebActivity : AppCompatActivity() {
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
     private var immersive = true
 
+    /** 登录态检查用的主线程调度器。 */
+    private val handler = Handler(Looper.getMainLooper())
+
     /** 被自家新窗口覆盖时置位，避免把「被覆盖」误判成「用户按 Home」而进入 PiP。 */
     private var pipSuppressed = false
 
@@ -130,6 +139,8 @@ open class BiliWebActivity : AppCompatActivity() {
         if (result.resultCode == RESULT_OK) {
             // 登录成功后 Cookie 已写入共享的 CookieManager，重载让 bridge 重新拉取 nav。
             webView.reload()
+            // 立刻做一次登录态判定与票据续期，避免刚登录就因为票据问题掉线。
+            scheduleLoginCheck()
         }
     }
 
@@ -181,7 +192,14 @@ open class BiliWebActivity : AppCompatActivity() {
         requestNotificationPermission()
         applyTheme()
 
+        // 把持久化的登录 cookie 写回 CookieManager（对齐官方 updateBiliCookie），
+        // 保证进程重启后登录态还在。
+        LoginSessionManager.restoreCookies(this)
+
         webView.loadUrl(savedInstanceState?.getString(STATE_URL) ?: startUrl)
+
+        // 启动后判定登录态并在需要时续期（对齐官方 judgeUserLoginStatus / checkIsRefreshToken）。
+        scheduleLoginCheck()
 
         onBackPressedDispatcher.addCallback(
             this,
@@ -194,6 +212,32 @@ open class BiliWebActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+
+    /**
+     * 登录态判定 + 票据续期的定时任务。
+     *
+     * 官方客户端在主窗口就绪时调用一次 checkIsRefreshToken()，这里额外做周期检查，
+     * 保证应用长时间开着也不会因为票据过期而掉登录。
+     */
+    private fun scheduleLoginCheck() {
+        handler.removeCallbacks(loginCheckTask)
+        handler.post(loginCheckTask)
+    }
+
+    private val loginCheckTask = object : Runnable {
+        override fun run() {
+            Thread {
+                try {
+                    if (LoginSessionManager.judgeLoginStatus(this@BiliWebActivity)) {
+                        LoginSessionManager.refreshIfNeeded(this@BiliWebActivity)
+                    }
+                } catch (_: Exception) {
+                    /* 网络异常时忽略，等下一轮 */
+                }
+            }.start()
+            handler.postDelayed(this, LOGIN_CHECK_INTERVAL_MS)
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -771,6 +815,7 @@ open class BiliWebActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         unregisterActivity(this)
+        handler.removeCallbacks(loginCheckTask)
         if (customView != null) {
             exitFullscreen()
         }
@@ -998,6 +1043,58 @@ open class BiliWebActivity : AppCompatActivity() {
             val manager = CookieManager.getInstance()
             manager.setCookie(url, cookieString)
             manager.flush()
+        }
+
+        /**
+         * render 通过 auth/setCookies 交回来的 cookie（含 expirationDate），
+         * 这里存进持久化存储，对齐官方 secureStore 的行为。
+         */
+        @JavascriptInterface
+        fun setAuthCookies(cookiesJson: String?) {
+            val json = cookiesJson ?: return
+            try {
+                val array = org.json.JSONArray(json)
+                val cookies = (0 until array.length()).mapNotNull { index ->
+                    val item = array.optJSONObject(index) ?: return@mapNotNull null
+                    val name = item.optString("name")
+                    if (name.isEmpty()) return@mapNotNull null
+                    AuthCookie(
+                        name = name,
+                        value = item.optString("value"),
+                        expirationDate = item.optLong("expirationDate")
+                    )
+                }
+                if (cookies.isNotEmpty()) {
+                    AuthCookieStore.upsert(this@BiliWebActivity, cookies)
+                }
+            } catch (_: Exception) {
+                /* 忽略格式错误 */
+            }
+        }
+
+        @JavascriptInterface
+        fun getAuthCookies(): String {
+            return try {
+                val array = org.json.JSONArray()
+                AuthCookieStore.getCookies(this@BiliWebActivity).forEach { cookie ->
+                    array.put(
+                        org.json.JSONObject()
+                            .put("name", cookie.name)
+                            .put("value", cookie.value)
+                            .put("expirationDate", cookie.expirationDate)
+                    )
+                }
+                array.toString()
+            } catch (_: Exception) {
+                "[]"
+            }
+        }
+
+        /** 官方 handleSetRefreshToken：保存登录票据续期用的 refresh_token。 */
+        @JavascriptInterface
+        fun setRefreshToken(token: String?) {
+            if (token.isNullOrEmpty()) return
+            AuthCookieStore.setRefreshToken(this@BiliWebActivity, token)
         }
 
         @JavascriptInterface
