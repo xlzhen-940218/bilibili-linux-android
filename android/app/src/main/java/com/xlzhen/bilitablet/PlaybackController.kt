@@ -8,13 +8,23 @@ object PlaybackController {
 
     private var webViewRef: WeakReference<WebView>? = null
 
+    /** 播放的 <video> 所在文档。播放页是顶层文档，直播间在 iframe 里。 */
+    private var docExpression: String = "document"
+
     fun bind(webView: WebView) {
         webViewRef = WeakReference(webView)
+        docExpression = "document"
+    }
+
+    fun bindLive(webView: WebView) {
+        webViewRef = WeakReference(webView)
+        docExpression = "(function(){var f=document.querySelector('iframe');" +
+            "return (f&&f.contentWindow&&f.contentWindow.document)||document})()"
     }
 
     fun toggle() {
         evaluate(
-            "(function(){var v=document.querySelector('video');" +
+            "(function(){var d=" + docExpression + ";var v=d.querySelector('video');" +
                 "if(!v)return 'none';" +
                 "if(v.paused){v.play()}else{v.pause()}" +
                 "return v.paused?'paused':'playing'})()"
@@ -23,21 +33,21 @@ object PlaybackController {
 
     fun play() {
         evaluate(
-            "(function(){var v=document.querySelector('video');" +
+            "(function(){var d=" + docExpression + ";var v=d.querySelector('video');" +
                 "if(v&&v.paused)v.play()})()"
         )
     }
 
     fun pause() {
         evaluate(
-            "(function(){var v=document.querySelector('video');" +
+            "(function(){var d=" + docExpression + ";var v=d.querySelector('video');" +
                 "if(v&&!v.paused)v.pause()})()"
         )
     }
 
     fun seekTo(positionMs: Long) {
         evaluate(
-            "(function(){var v=document.querySelector('video');" +
+            "(function(){var d=" + docExpression + ";var v=d.querySelector('video');" +
                 "if(v)v.currentTime=" + (positionMs / 1000.0) + "})()"
         )
     }

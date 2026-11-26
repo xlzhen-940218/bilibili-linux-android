@@ -280,7 +280,9 @@ open class BiliWebActivity : AppCompatActivity() {
             javaScriptCanOpenWindowsAutomatically = false
             setSupportMultipleWindows(false)
             useWideViewPort = true
-            loadWithOverviewMode = true
+            // 关掉「按内容宽度自动缩放」：进/出画中画时窗口尺寸变化，
+            // 开着这项 WebView 会把页面缩放改成 >100%，回来后画面被裁掉且可拖动。
+            loadWithOverviewMode = false
             setSupportZoom(true)
             builtInZoomControls = false
             displayZoomControls = false
@@ -879,7 +881,52 @@ open class BiliWebActivity : AppCompatActivity() {
         // 进入 PiP 时不要隐藏系统栏，否则 SystemUI 的小窗控制按钮会被一起藏掉。
         if (!isInPictureInPictureMode) {
             hideSystemBars()
+            // 小窗的显示密度和全屏不同，WebView 会留下 >100% 的页面缩放，
+            // 回来后画面被放大、左上角对齐且能拖动。这里把缩放恢复成 100%。
+            resetPageZoom()
         }
+    }
+
+    /**
+     * 清掉画中画留下的页面缩放。
+     *
+     * 从系统小窗展开回全屏时，直播页的内核页面缩放会停在 >100%
+     * （visualViewport.scale ≈ 1.0937），画面被放大、以左上角对齐、还能用手指拖动。
+     * 这个缩放 WebView 的 getScale()/zoomBy() 管不到，只有页面的 viewport 元信息变化
+     * 才会让内核重新应用 initial-scale。所以这里把 viewport 临时改成一个只差万分之一的
+     * 值再改回去，强制页面缩回 100%（视觉上察觉不到）。
+     * 缩放可能在内核完成窗口尺寸切换后才出现，所以额外观察一小段时间。
+     */
+    private fun resetPageZoom() {
+        val script = """
+            (function(){
+              function fix(){
+                try{
+                  var vv=window.visualViewport;
+                  if(!vv||vv.scale<=1.005)return;
+                  var m=document.querySelector('meta[name="viewport"]');
+                  var orig=m?m.getAttribute('content'):null;
+                  if(!m){
+                    m=document.createElement('meta');m.setAttribute('name','viewport');
+                    (document.head||document.documentElement).appendChild(m);
+                  }
+                  m.setAttribute('content','width=device-width, initial-scale=1.0001');
+                  requestAnimationFrame(function(){requestAnimationFrame(function(){
+                    if(orig===null){if(m.parentNode)m.parentNode.removeChild(m);}
+                    else{m.setAttribute('content',orig);}
+                  });});
+                }catch(e){}
+              }
+              if(window.__tblZoomWatch){clearInterval(window.__tblZoomWatch);window.__tblZoomWatch=null;}
+              var n=0;
+              fix();
+              window.__tblZoomWatch=setInterval(function(){
+                fix();
+                if(++n>=12){clearInterval(window.__tblZoomWatch);window.__tblZoomWatch=null;}
+              },250);
+            })()
+        """.trimIndent()
+        evaluateJavascript(script)
     }
 
     protected open fun onMinimize() {
@@ -977,6 +1024,19 @@ open class BiliWebActivity : AppCompatActivity() {
         webView.loadUrl(url)
     }
 
+    /** 子类（直播间）需要在 WebView 里取页面信息。 */
+    protected fun currentWebView(): WebView = webView
+
+    protected fun evaluateJavascript(script: String, callback: ((String?) -> Unit)? = null) {
+        runOnUiThread {
+            try {
+                webView.evaluateJavascript(script) { value -> callback?.invoke(value) }
+            } catch (_: Exception) {
+                /* 页面还没准备好时忽略 */
+            }
+        }
+    }
+
     protected open fun onToggleMaximize() {
         // 首页默认不响应；PlayerActivity 覆盖为进入系统 PiP。
     }
@@ -988,6 +1048,8 @@ open class BiliWebActivity : AppCompatActivity() {
     override fun onDestroy() {
         unregisterActivity(this)
         handler.removeCallbacks(loginCheckTask)
+        // 播放页/直播间直接退出时页面不会触发 beforeunload，这里兜底撤掉通知。
+        PlaybackNotification.cancelIfOwner(this)
         if (customView != null) {
             exitFullscreen()
         }

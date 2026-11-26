@@ -44,6 +44,12 @@ object PlaybackNotification {
     private var coverBitmap: Bitmap? = null
     private var mediaSession: MediaSessionCompat? = null
 
+    /** 发通知的页面（播放页/直播间），用来在对应 Activity 结束时只撤掉自己的通知。 */
+    private var ownerRef: java.lang.ref.WeakReference<Context>? = null
+
+    /** 点通知要打开的页面。 */
+    private var openIntent: Intent? = null
+
     fun update(
         context: Context,
         title: String,
@@ -51,7 +57,8 @@ object PlaybackNotification {
         desc: String,
         playing: Boolean,
         position: Long,
-        duration: Long
+        duration: Long,
+        openIntent: Intent? = null
     ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
@@ -63,6 +70,8 @@ object PlaybackNotification {
         }
         ensureChannel(context)
         ensureSession(context)
+        ownerRef = java.lang.ref.WeakReference(context)
+        this.openIntent = openIntent
         val data = Data(title, cover, desc, playing, position, duration)
         current = data
         show(context, data)
@@ -80,6 +89,15 @@ object PlaybackNotification {
         current = null
         coverUrl = null
         coverBitmap = null
+        ownerRef = null
+        openIntent = null
+    }
+
+    /** Activity 销毁时调用：只撤掉自己发的通知，别误删另一个窗口的。 */
+    fun cancelIfOwner(context: Context) {
+        if (ownerRef?.get() === context) {
+            cancel(context)
+        }
     }
 
     private fun ensureChannel(context: Context) {
@@ -150,7 +168,7 @@ object PlaybackNotification {
                 .build()
         )
 
-        val openIntent = Intent(context, MainActivity::class.java).apply {
+        val openIntent = openIntent ?: Intent(context, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         }
         val contentIntent = PendingIntent.getActivity(
