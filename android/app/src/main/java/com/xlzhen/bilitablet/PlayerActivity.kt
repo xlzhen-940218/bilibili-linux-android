@@ -10,7 +10,7 @@ import java.lang.ref.WeakReference
 
 /**
  * 播放页独立 Activity：
- * - 与首页分开任务，允许手动分屏；
+ * - 和首页在同一个任务里（最近任务只留一条），单实例复用；
  * - 最小化回桌面，全屏切换进入系统 PiP，关闭只结束播放页（回首页不刷新）；
  * - 同一条视频只保留一个播放页：首页卡片既触发 <a href> 导航，又会调用
  *   window/openPlayerWindow，两条路径都会走到 openPlayer。
@@ -98,6 +98,12 @@ class PlayerActivity : BiliWebActivity() {
         super.onDestroy()
     }
 
+    /** 同一个播放页窗口里切换视频。 */
+    fun loadVideo(url: String) {
+        setIntent(Intent(intent).putExtra(EXTRA_URL, url))
+        loadUrl(startUrl)
+    }
+
     /** 同一视频重复点击时，把已在运行的播放页带回前台，而不是再开一个。 */
     fun bringToFrontIfNeeded() {
         if (isInPictureInPictureMode || hasWindowFocus()) {
@@ -105,7 +111,7 @@ class PlayerActivity : BiliWebActivity() {
         }
         startActivity(
             Intent(this, PlayerActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                 .putExtra(EXTRA_URL, rawUrl)
         )
     }

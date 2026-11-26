@@ -15,6 +15,8 @@ class MainActivity : BiliWebActivity() {
 
     override fun shouldOpenPlayerInNewActivity(): Boolean = true
 
+    override fun shouldOpenLiveRoomInNewActivity(): Boolean = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         live = WeakReference(this)

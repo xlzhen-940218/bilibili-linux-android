@@ -53,7 +53,15 @@
             android:launchMode="standard"
             android:resizeableActivity="true"
             android:supportsPictureInPicture="true"
-            android:taskAffinity=""
+            android:theme="@style/Theme.BiliTablet" />
+        <activity
+            android:name=".LiveRoomActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
+            android:exported="false"
+            android:launchMode="standard"
+            android:resizeableActivity="true"
+            android:screenOrientation="sensorLandscape"
+            android:supportsPictureInPicture="true"
             android:theme="@style/Theme.BiliTablet" />
         <provider
             android:name="androidx.core.content.FileProvider"

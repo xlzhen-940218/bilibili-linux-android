@@ -26,6 +26,33 @@
         /* ignore */
     }
 
+    // 直播卡片是 <a target="_blank" href="//live.bilibili.com/房间号">，
+    // WebView 里不支持多窗口，直接拦截点击交给原生直播间，避免首页自己跳走。
+    try {
+        document.addEventListener('click', function (ev) {
+            var node = ev.target;
+            if (!node || !node.closest) {
+                return;
+            }
+            var link = node.closest('a[href]');
+            if (!link) {
+                return;
+            }
+            var href = link.getAttribute('href') || '';
+            var match = href.match(/^(?:https?:)?\/\/live\.bilibili\.com\/(\d+)/);
+            if (!match) {
+                return;
+            }
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (window.AndroidBridge && typeof window.AndroidBridge.openLiveRoom === 'function') {
+                window.AndroidBridge.openLiveRoom(match[1]);
+            }
+        }, true);
+    } catch (e) {
+        /* ignore */
+    }
+
     (function injectStyles() {
         var style = document.createElement('style');
         style.id = 'bili-tablet-custom-style';
@@ -42,6 +69,59 @@
                 var h = document.head || document.getElementsByTagName('head')[0];
                 h && h.appendChild(style);
             });
+        }
+    })();
+
+    // 首页推荐、直播页的卡片在桌面上写死为 col_3（4 列），在平板/手机上会挤成一条。
+    // 这里按内容区的实际宽度动态计算列数，写入 --bili-tablet-cols 供下面的样式使用。
+    (function layoutColumns() {
+        var style = document.createElement('style');
+        style.id = 'bili-tablet-grid-style';
+        style.textContent = [
+            '.home_recommends .row > [class*="col_3"], .home_live .row > [class*="col_3"] {',
+            'flex: 0 0 calc(100% / var(--bili-tablet-cols, 4)) !important;',
+            'max-width: calc(100% / var(--bili-tablet-cols, 4)) !important;',
+            '}'
+        ].join('\n');
+
+        function update() {
+            var row = document.querySelector('.home_recommends .row') ||
+                document.querySelector('.home_live .row');
+            if (!row || !row.clientWidth) {
+                return;
+            }
+            // 220px 是卡片（封面 + 标题）比较舒适的最小宽度。
+            var cols = Math.floor(row.clientWidth / 220);
+            cols = Math.max(2, Math.min(6, cols));
+            if (window.__biliTabletCols !== cols) {
+                window.__biliTabletCols = cols;
+                document.documentElement.style.setProperty('--bili-tablet-cols', String(cols));
+            }
+        }
+
+        function mount() {
+            (document.head || document.documentElement).appendChild(style);
+            update();
+            window.addEventListener('resize', update);
+            if (window.ResizeObserver) {
+                try {
+                    new ResizeObserver(update).observe(document.documentElement);
+                } catch (e) {
+                    /* ignore */
+                }
+            }
+            if (window.MutationObserver) {
+                new MutationObserver(update).observe(document.documentElement, {
+                    childList: true,
+                    subtree: true
+                });
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', mount);
+        } else {
+            mount();
         }
     })();
 
@@ -211,8 +291,21 @@
                 return JSON.stringify(INIT);
             case 'app/mainProcessReady':
                 return true;
+            case 'app/version':
+                // 桌面端直播间（live.bilibili.com/desktop）用它判断客户端能力。
+                return INIT.APP_VERSION;
             case 'app/getTheme':
                 return 'light';
+            case 'system/isWin':
+                // 首页 render 的 Windows 分支会去读 system/getFontsInfo 等桌面接口，
+                // 只有官方桌面端直播间页面需要按 Win 布局。
+                return location.hostname === 'live.bilibili.com';
+            case 'system/getFontsInfo':
+                return [];
+            case 'window/getSurfaceInfo':
+                return null;
+            case 'window/isLiveRoomWindowOpened':
+                return true;
             case 'window/isFocused':
             case 'window/isVisible':
             case 'window/isMaximized':
@@ -220,9 +313,12 @@
             case 'window/isPined':
             case 'window/isMainWindowMini':
             case 'window/isPlayerWindowVisible':
-            case 'window/isLiveRoomWindowVisible':
             case 'window/isBiliPetVisible':
                 return false;
+            case 'window/isLiveRoomWindowVisible':
+                return (window.AndroidBridge && typeof window.AndroidBridge.isLiveRoomVisible === 'function')
+                    ? !!window.AndroidBridge.isLiveRoomVisible()
+                    : false;
             case 'config/getIsShowConsoleLog':
                 // 保留 console，方便在 logcat / DevTools 里定位 render 报错。
                 return true;
@@ -689,12 +785,31 @@
             return Promise.resolve({ code: 0 });
         }
         if (action === 'window/openMainWindow') {
-            // 播放页左上角「回到主界面」：结束播放页，回首页（首页不刷新）。
-            if (location.pathname.indexOf('player.html') >= 0 &&
+            // 「回到主界面」：播放页/直播间都是独立 Activity，结束自己回首页（首页不刷新）。
+            var inPlayer = location.pathname.indexOf('player.html') >= 0;
+            var inLiveRoom = location.hostname === 'live.bilibili.com';
+            if ((inPlayer || inLiveRoom) &&
                 window.AndroidBridge &&
                 typeof window.AndroidBridge.closeWindow === 'function') {
                 window.AndroidBridge.closeWindow();
             }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'window/minimize') {
+            // 桌面端直播间标题栏的最小化：退到后台，系统会自动进入画中画。
+            if (window.AndroidBridge && typeof window.AndroidBridge.moveToBack === 'function') {
+                window.AndroidBridge.moveToBack();
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'window/reload') {
+            location.reload();
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'window/toggleDevTools' ||
+            action === 'window/pin' ||
+            action === 'window/unpin' ||
+            action === 'window/closeSurface') {
             return Promise.resolve({ code: 0 });
         }
         if (action === 'window/openPlayerWindow') {
@@ -715,6 +830,44 @@
                 }
             }
             return Promise.resolve({ code: 0 });
+        }
+        if (action === 'window/openLiveRoomWindow') {
+            // 官方主进程会开一个独立直播间窗口，这里同样交给原生 Activity。
+            var room = arguments[1];
+            if (room && typeof room === 'object') {
+                room = room.roomId != null ? room.roomId
+                    : (room.room_id != null ? room.room_id : room.id);
+            }
+            room = (room === null || room === undefined) ? '' : String(room);
+            if (room && window.AndroidBridge && typeof window.AndroidBridge.openLiveRoom === 'function') {
+                window.AndroidBridge.openLiveRoom(room);
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'window/focusLiveRoomWindow') {
+            if (window.AndroidBridge && typeof window.AndroidBridge.focusLiveRoom === 'function') {
+                window.AndroidBridge.focusLiveRoom();
+            }
+            return Promise.resolve({ code: 0 });
+        }
+        if (action === 'auth/signQueryParams') {
+            // 官方主进程会用私有 appkey 给参数签名。Android 侧没有这套密钥，
+            // 直播首页的 app-interface 请求由原生层接管并重新拉取公开接口数据，
+            // 这里只需要把参数原样拼成 query（第二个参数为 true 时返回参数对象）。
+            var src = arguments[1] || {};
+            var asObject = arguments[2] === true;
+            var parts = [];
+            Object.keys(src).sort().forEach(function (k) {
+                var v = src[k];
+                if (v === null || v === undefined) {
+                    return;
+                }
+                parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+            });
+            return Promise.resolve({
+                code: 0,
+                data: asObject ? Object.assign({}, src) : parts.join('&')
+            });
         }
         if (action === 'auth/requestLogin') {
             // 官方 login.html 内嵌 Electron <webview>，Android 改为原生登录页。

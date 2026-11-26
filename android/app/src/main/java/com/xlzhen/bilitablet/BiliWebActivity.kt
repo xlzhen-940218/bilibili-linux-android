@@ -44,6 +44,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -113,10 +114,36 @@ open class BiliWebActivity : AppCompatActivity() {
                 }
             }
         }
+
+        /** 直播间窗口的打开/关闭要同步给首页，用于显示/隐藏侧边栏的「直播间」按钮。 */
+        fun broadcastLiveRoomVisible(visible: Boolean) {
+            val script = "(function(){" +
+                "if(window.biliBridgePc&&window.biliBridgePc.emit){" +
+                "window.biliBridgePc.emit('window/liveRoomWindowVisibleChange',{data:$visible});" +
+                "}" +
+                "})()"
+            synchronized(activeActivities) {
+                activeActivities.forEach { act ->
+                    act.runOnUiThread {
+                        try { act.webView.evaluateJavascript(script, null) } catch (_: Exception) {}
+                    }
+                }
+            }
+        }
     }
 
     protected open val startUrl: String = "https://bilipc.bilibili.com/index.html"
     protected open val windowType: String = "MainWindowTheme"
+
+    /**
+     * 是否注入 render 的 bridge。首页/播放页加载 bilipc 的 render 资源，需要；
+     * 直播间宿主页挂在 live.bilibili.com 下（为了让同源 iframe 不被 X-Frame-Options 拦截）。
+     */
+    protected open val injectRenderBridge: Boolean = true
+
+    /** bridge.js 注入的页面来源。直播间宿主页在 live.bilibili.com。 */
+    protected open val bridgeScriptOrigins: Set<String> =
+        setOf("https://bilipc.bilibili.com")
 
     private lateinit var root: FrameLayout
     private lateinit var webView: WebView
@@ -275,11 +302,11 @@ open class BiliWebActivity : AppCompatActivity() {
         webView.addJavascriptInterface(JsBridge(), "AndroidBridge")
 
         // 必须在 render 自己的 bundle 之前注入，否则 biliBridgePc 不存在会直接崩。
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+        if (injectRenderBridge && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(
                 webView,
                 bridgeScript,
-                setOf("https://bilipc.bilibili.com")
+                bridgeScriptOrigins
             )
         }
 
@@ -292,7 +319,9 @@ open class BiliWebActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 // 不支持 document-start 注入时的兜底；bridge.js 自身幂等。
-                view.evaluateJavascript(bridgeScript, null)
+                if (injectRenderBridge) {
+                    view.evaluateJavascript(bridgeScript, null)
+                }
             }
 
             override fun shouldInterceptRequest(
@@ -319,6 +348,24 @@ open class BiliWebActivity : AppCompatActivity() {
                     }
                     if (request.method == "GET") {
                         return proxyRequest(request, origin, requestedHeaders)
+                    }
+                    return null
+                }
+                if (host == "api.live.bilibili.com") {
+                    val origin = header(request, "Origin")
+                    val requestedHeaders = header(request, "Access-Control-Request-Headers")
+                    if (request.method == "OPTIONS") {
+                        return WebResourceResponse(
+                            "text/plain",
+                            "utf-8",
+                            204,
+                            "No Content",
+                            corsHeaders(origin, requestedHeaders),
+                            ByteArrayInputStream(ByteArray(0))
+                        )
+                    }
+                    if (request.method == "GET") {
+                        return liveApiResponse(uri, origin, requestedHeaders)
                     }
                     return null
                 }
@@ -375,6 +422,14 @@ open class BiliWebActivity : AppCompatActivity() {
                         val playerUrl = clientPlayerUrlFor(uri)
                         if (playerUrl != null) {
                             openPlayer(playerUrl)
+                            return true
+                        }
+                    }
+                    // 直播卡片/直播链接统一交给独立的直播间窗口。
+                    if (shouldOpenLiveRoomInNewActivity()) {
+                        val roomId = liveRoomIdFor(uri)
+                        if (roomId != null) {
+                            openLiveRoom(roomId)
                             return true
                         }
                     }
@@ -560,6 +615,81 @@ open class BiliWebActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 直播首页依赖 app-interface 的 feedV2 / second/getList，这两个接口需要官方主进程
+     * 的私有签名（auth/signQueryParams），网页侧无法构造。这里改用公开的
+     * room/v1/area/getRoomList 数据合成同样的响应结构，其余直播请求继续交给 WebView。
+     */
+    private fun liveApiResponse(
+        uri: Uri,
+        origin: String?,
+        requestedHeaders: String?
+    ): WebResourceResponse? {
+        val path = uri.path.orEmpty()
+        val isFeed = path.contains("/xlive/app-interface/v2/index/feedV2")
+        val isList = path.contains("/xlive/app-interface/v2/second/getList")
+        if (!isFeed && !isList) {
+            return null
+        }
+        val page = uri.getQueryParameter("page")?.toIntOrNull() ?: 1
+        val pageSize = (uri.getQueryParameter("page_size")?.toIntOrNull() ?: 20).coerceIn(1, 30)
+        val parentAreaId = uri.getQueryParameter("parent_area_id") ?: "0"
+        val areaId = uri.getQueryParameter("area_id") ?: "0"
+        val rooms = try {
+            JSONObject(
+                fetchText(
+                    "https://api.live.bilibili.com/room/v1/area/getRoomList" +
+                        "?platform=web&parent_area_id=$parentAreaId&area_id=$areaId" +
+                        "&page=$page&page_size=$pageSize&sort_type=online"
+                )
+            ).optJSONArray("data") ?: JSONArray()
+        } catch (e: Exception) {
+            android.util.Log.e("BiliTabletNet", "live feed failed: ${e.message}")
+            JSONArray()
+        }
+
+        val data = JSONObject()
+        if (isFeed) {
+            val cards = JSONArray()
+            for (i in 0 until rooms.length()) {
+                cards.put(
+                    JSONObject()
+                        .put("card_type", "small_card_v1")
+                        .put("card_data", JSONObject().put("small_card_v1", rooms.optJSONObject(i)))
+                )
+            }
+            data.put("card_list", cards)
+        } else {
+            data.put("list", rooms)
+        }
+        data.put("has_more", rooms.length() >= pageSize)
+
+        val body = JSONObject()
+            .put("code", 0)
+            .put("message", "0")
+            .put("ttl", 1)
+            .put("data", data)
+            .toString()
+        return WebResourceResponse(
+            "application/json",
+            "utf-8",
+            200,
+            "OK",
+            corsHeaders(origin, requestedHeaders),
+            ByteArrayInputStream(body.toByteArray())
+        )
+    }
+
+    private fun fetchText(url: String): String {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.connectTimeout = 8_000
+        conn.readTimeout = 10_000
+        conn.setRequestProperty("User-Agent", desktopUserAgent)
+        conn.setRequestProperty("Accept", "application/json, text/plain, */*")
+        conn.setRequestProperty("Accept-Encoding", "identity")
+        return conn.inputStream.bufferedReader().use { it.readText() }
+    }
+
     private fun mimeFor(path: String): String {        return when (path.substringAfterLast('.', "").lowercase()) {
             "html" -> "text/html"
             "js", "mjs" -> "application/javascript"
@@ -622,6 +752,10 @@ open class BiliWebActivity : AppCompatActivity() {
         }
         root.setBackgroundColor(background)
         webView.setBackgroundColor(background)
+        // 网页版直播间不是 render 页面，不往它的 DOM 上挂 bili_dark/bili_light。
+        if (!injectRenderBridge) {
+            return
+        }
         val js = "(function(){var d=document.documentElement;if(!d)return;" +
             "d.classList.toggle('bili_dark',$dark);" +
             "d.classList.toggle('bili_light',${!dark});" +
@@ -708,11 +842,14 @@ open class BiliWebActivity : AppCompatActivity() {
             pipSuppressed = false
             return
         }
-        val isPlayerPage = webView.url?.contains("player.html") == true
-        if (customView != null || isPlayerPage) {
+        if (customView != null || shouldEnterPipOnLeave()) {
             enterPip()
         }
     }
+
+    /** 播放页与直播间都是视频窗口，按 Home 时进系统画中画。 */
+    protected open fun shouldEnterPipOnLeave(): Boolean =
+        webView.url?.contains("player.html") == true
 
     override fun onResume() {
         super.onResume()
@@ -758,6 +895,8 @@ open class BiliWebActivity : AppCompatActivity() {
 
     protected open fun shouldOpenPlayerInNewActivity(): Boolean = false
 
+    protected open fun shouldOpenLiveRoomInNewActivity(): Boolean = false
+
     protected open fun shouldBlockExternalNavigation(uri: android.net.Uri): Boolean = false
 
     private fun clientPlayerUrlFor(uri: android.net.Uri): String? {
@@ -777,32 +916,65 @@ open class BiliWebActivity : AppCompatActivity() {
         return null
     }
 
+    /** live.bilibili.com/<房间号> 这类地址返回房间号，其余返回 null。 */
+    private fun liveRoomIdFor(uri: android.net.Uri): String? {
+        if (uri.host != "live.bilibili.com") {
+            return null
+        }
+        val segment = uri.path?.trim('/')?.substringBefore('/').orEmpty()
+        return if (segment.isNotEmpty() && segment.all { it.isDigit() }) segment else null
+    }
+
     protected fun openPlayer(url: String) {
         val target = if (url.startsWith("/")) "https://bilipc.bilibili.com$url" else url
         val existing = PlayerActivity.currentInstance()
-        if (existing !== this && existing != null &&
-            PlayerActivity.isSameVideo(existing.playUrl, target)
-        ) {
-            // 首页卡片同时走 <a href> 和 window/openPlayerWindow，同一条视频只留一个播放页。
+        if (existing !== this && existing != null) {
+            // 播放页只保留一个窗口：同一条视频直接带回前台，别的视频在当前窗口里切换。
+            // 不再为每次打开新建任务，否则最近任务里会堆满播放页。
+            if (!PlayerActivity.isSameVideo(existing.playUrl, target)) {
+                if (!existing.isInPictureInPictureMode) {
+                    // 新视频顶掉旧视频；旧页面被覆盖不是用户按 Home，不该自动进 PiP。
+                    existing.suppressPipOnLeave()
+                }
+                existing.loadVideo(url)
+            }
             existing.bringToFrontIfNeeded()
+            PlayerActivity.rememberLaunch(target)
             return
         }
         if (existing == null && PlayerActivity.isLaunchingSameVideo(target)) {
             // 上一个播放页还没创建完（startActivity 异步），不能再开第二个。
             return
         }
-        if (existing != null && !existing.isInPictureInPictureMode) {
-            // 新播放页会顶掉旧播放页；旧播放页被覆盖不是用户按 Home，不该自动进 PiP。
-            existing.suppressPipOnLeave()
-        }
         PlayerActivity.rememberLaunch(target)
-        val intent = Intent(this, PlayerActivity::class.java)
-            .putExtra(PlayerActivity.EXTRA_URL, url)
-            .addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_MULTIPLE_TASK
-            )
-        startActivity(intent)
+        startActivity(
+            Intent(this, PlayerActivity::class.java)
+                .putExtra(PlayerActivity.EXTRA_URL, url)
+        )
+    }
+
+    /**
+     * 打开直播间。官方客户端只保留一个直播间窗口，切换房间时复用当前窗口。
+     */
+    protected fun openLiveRoom(roomId: String) {
+        val id = roomId.trim()
+        if (id.isEmpty()) return
+        val existing = LiveRoomActivity.currentInstance()
+        if (existing !== this && existing != null) {
+            existing.loadRoom(id)
+            existing.bringToFrontIfNeeded()
+            return
+        }
+        // 和播放页一样留在当前任务里，不再新建任务，避免最近任务被填满。
+        startActivity(
+            Intent(this, LiveRoomActivity::class.java)
+                .putExtra(LiveRoomActivity.EXTRA_ROOM_ID, id)
+        )
+    }
+
+    /** 供子类（直播间复用窗口）切换当前页面。 */
+    protected fun loadUrl(url: String) {
+        webView.loadUrl(url)
     }
 
     protected open fun onToggleMaximize() {
@@ -965,6 +1137,23 @@ open class BiliWebActivity : AppCompatActivity() {
         fun openPlayer(url: String) {
             runOnUiThread { this@BiliWebActivity.openPlayer(url) }
         }
+
+        /** render 的 window/openLiveRoomWindow：打开独立直播间窗口。 */
+        @JavascriptInterface
+        fun openLiveRoom(roomId: String?) {
+            val id = roomId?.trim().orEmpty()
+            if (id.isEmpty()) return
+            runOnUiThread { this@BiliWebActivity.openLiveRoom(id) }
+        }
+
+        /** render 的 window/focusLiveRoomWindow：把已打开的直播间窗口带回前台。 */
+        @JavascriptInterface
+        fun focusLiveRoom() {
+            runOnUiThread { LiveRoomActivity.currentInstance()?.bringToFrontIfNeeded() }
+        }
+
+        @JavascriptInterface
+        fun isLiveRoomVisible(): Boolean = LiveRoomActivity.currentInstance() != null
 
         @JavascriptInterface
         fun updatePlayback(json: String) {
